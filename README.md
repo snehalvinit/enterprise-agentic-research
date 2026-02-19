@@ -7,6 +7,7 @@ Parallel research initiatives for upgrading Smart-Segmentation into an enterpris
 | # | Folder | Model/Agent | Status | Description |
 |---|--------|-------------|--------|-------------|
 | 1 | `research_1_sonnet_claude/` | Sonnet Claude | Ready to Run | Enterprise agent architecture upgrade research |
+| 2 | `research_1_opus_claude/` | Opus Claude 4.6 | Complete | 41 bottlenecks, 40+ sources, 5-layer architecture, 16-week roadmap |
 
 ## Structure
 
