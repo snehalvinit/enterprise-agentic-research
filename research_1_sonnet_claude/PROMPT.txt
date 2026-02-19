@@ -1,0 +1,258 @@
+================================================================================
+ENTERPRISE AGENTIC RESEARCH - RESEARCH 1 (SONNET CLAUDE)
+================================================================================
+Research ID    : research_1_sonnet_claude
+Source Code    : /Users/s0m0ohl/customer_segement/Smart-Segmentation
+Output Folder  : /Users/s0m0ohl/customer_segement/enterprise_agentic_research/research_1_sonnet_claude
+Reference      : /Users/s0m0ohl/customer_segement/ditto_delivery (for structure reference)
+================================================================================
+
+
+MISSION
+--------------------------------------------------------------------------------
+Deeply analyze the Smart-Segmentation codebase, then research and propose a
+concrete upgrade plan to transform it into an enterprise-grade agentic customer
+segmentation system. The system must be reliable, scalable, auto-improving, and
+deliver state-of-the-art quality while remaining cost-conscious.
+
+
+PART A: CODEBASE ANALYSIS
+--------------------------------------------------------------------------------
+Carefully study the Smart-Segmentation code at:
+  /Users/s0m0ohl/customer_segement/Smart-Segmentation
+
+Evaluate it against these upgrade criteria:
+  1. Best thinking models (structured reasoning, chain-of-thought)
+  2. Flexible, pluggable architecture (skills, tools, knowledge as modules)
+  3. Eval-first development (evaluation gates before deployment)
+  4. Auto-improvement (feedback loops, prompt optimization)
+  5. Memory (short-term conversation state + long-term learned patterns)
+  6. Multi-tenant support (tenant-specific configs, data isolation)
+  7. High quality with consistent, reliable, accurate results
+  8. Scalable to support deep customer insights (marketing campaigns,
+     CRM campaigns, segment expansion, etc.)
+  9. Hypothesis assessment (evaluate user hypotheses, suggest better ideas
+     with reasoning)
+  10. Model exploration and recommendation (assess existing models, suggest
+      building new ones with concrete logs and memory-based evidence)
+
+
+PART B: DEEP RESEARCH
+--------------------------------------------------------------------------------
+Conduct thorough research on the latest approaches for building enterprise-level
+AI agents. This is NOT about personal assistant agents (like Ralph Loops, Open
+Claw, or similar community projects). Focus specifically on enterprise-grade
+agent architectures.
+
+Research sources should include:
+  - Academic papers
+  - Industry blogs and articles
+  - Twitter/X threads from practitioners
+  - Substack newsletters
+  - Video talks and presentations
+  - Open-source projects and frameworks
+  - Company engineering blogs
+
+Research topics:
+  - Enterprise agent architectures and design patterns
+  - Eval-first development and continuous evaluation
+  - Agentic memory systems (short-term, long-term, structured)
+  - Plugin/skill architectures for agents
+  - RAG best practices for enterprise knowledge management
+  - Multi-tenant agent systems
+  - Auto-improving agents (prompt optimization, feedback loops)
+  - Structured output and validation patterns
+  - Tool/MCP ecosystems
+  - Cost optimization without sacrificing quality
+  - Observability, tracing, and debugging for agents
+  - Plan-Act-Verify-Improve loops
+
+
+PART C: DELIVERABLE DOCUMENTS
+--------------------------------------------------------------------------------
+Produce all output in the research folder. Organize similar to the ditto_delivery
+reference folder. Also create a new git project under the GitHub user
+"snehalmistrybfa" so the research can be uploaded to the web for viewing detailed
+research markdown files and analysis.
+
+Required documents:
+
+  DOCUMENT 1: BOTTLENECK ANALYSIS
+  File: 01_bottleneck_analysis.md
+  --------------------------------
+  - Identify all bottlenecks and issues with the current Smart-Segmentation
+    approach and code.
+  - Cover: architecture issues, prompt design flaws, eval gaps, scalability
+    limits, reliability problems, missing capabilities.
+
+  DOCUMENT 2: RESEARCH COMPENDIUM
+  File: 02_research_compendium.md
+  --------------------------------
+  - All latest research, articles, blogs, tweets, substacks, videos, and papers
+    explored during this investigation.
+  - For each source: summary, what is useful, and how it applies to our
+    enterprise agent goals.
+  - Must be practical and actionable, grounded in real implementations.
+  - Include state-of-the-art approaches with cost analysis.
+  - Cost-saving alternatives should be justified but included in an appendix
+    (end quality must remain at state-of-the-art level).
+  - All citations and explanations from different companies, blogs, tweets,
+    substacks, and papers must be included.
+
+  DOCUMENT 3: CONCRETE UPGRADE PROPOSAL
+  File: 03_concrete_upgrade_proposal.md
+  --------------------------------
+  - Detailed reformation and upgrade plan for Smart-Segmentation.
+  - Start with high-level architecture, drill into details, then provide very
+    specific transformation examples.
+  - Include a concrete framework with detailed examples.
+  - Identify bottlenecks at each level and propose solutions.
+  - State-of-the-art approaches weighted against cost-based alternatives.
+  - Cost-saving options justified in appendix; core quality must be best-in-class.
+
+  DOCUMENT 4: IMPLEMENTATION ROADMAP
+  File: 04_implementation_roadmap.md
+  --------------------------------
+  - Step-by-step approach with clear priorities.
+  - Most impactful work comes first.
+  - Identify tasks that can be parallelized.
+  - Explain hypothesis and reasoning behind each priority decision.
+  - Include dependencies, risks, and mitigation strategies.
+
+  DOCUMENT 0: INDEX
+  File: INDEX.md
+  --------------------------------
+  - Overview of the research attempt, methodology, and links to all documents.
+
+
+PART D: PRIOR RESEARCH CONTEXT (USE AS INPUT)
+--------------------------------------------------------------------------------
+The following criteria and architectural patterns were identified in earlier
+research. Use these as a starting point and expand upon them.
+
+1. CRITERIA FOR ENTERPRISE AGENT ADOPTION
+   - Memory: retain context and information across interactions
+   - Auto-improvement: learn from feedback and improve over time
+   - Plugin architecture: add skills, knowledge, and tools dynamically
+   - Reliable and consistent results
+
+2. TECHNIQUES FOR AGENT RELIABILITY
+   - Eval first, implement later
+   - Use thinking models (structured reasoning)
+   - Act -> Verify -> Improve loop
+   - Auto-improving prompts (prompt optimization)
+
+3. STATIC VS DYNAMIC PROMPT ARCHITECTURE
+   What stays static (system + developer instructions):
+     - Agent identity and goal (1-2 lines)
+     - Safety and compliance rules
+     - Output format requirements (schemas)
+     - Control loop instruction (Plan -> Act -> Verify -> Improve)
+     - Grounding rule: "Use tools + retrieved docs as source of truth; don't guess"
+
+   What is dynamic (loaded at runtime):
+     - Skills (workflows) loaded on demand
+     - Knowledge (facts, policies, business rules) retrieved on demand
+     - Tool inventory registered dynamically (plugins)
+     - Tenant/client customizations stored as configs, not prompt text
+
+4. SKILLS: ADD CAPABILITIES WITHOUT CHANGING THE PROMPT
+   Skill = versioned, testable instruction bundle:
+     - Name + description + triggers ("when to use")
+     - Steps (deterministic procedure)
+     - Input/output schema (structured)
+     - Constraints + edge cases
+     - Examples (few-shot) if needed
+
+   Runtime flow:
+     - Router picks skill(s) based on intent
+     - Agent loads only the relevant skill text
+     - Executes under the same static system prompt
+
+   Implementation pattern:
+     - Skill registry (DB/repo): {skill_id, version, metadata, instructions, evals}
+     - Skill loader: inject selected skill into scratch context (not system prompt)
+     - Eval gate: skill changes must pass evals before rollout (A/B per tenant)
+
+5. KNOWLEDGE: ADD/EDIT CONTENT WITHOUT CHANGING THE PROMPT
+   RAG + knowledge contracts:
+     - Put knowledge in a retrievable store (docs, tables, policies, taxonomy)
+     - Require citations/grounding ("answer only from retrieved sources when available")
+     - Use chunking + metadata (domain, tenant, freshness, owner, version)
+     - Add freshness rules ("do not use if older than X") for volatile facts
+
+   Anti-hallucination rule:
+     - If retrieval returns nothing relevant -> ask a question or say "unknown"
+     - Never paraphrase prompts to fill gaps (this causes hallucinations)
+
+6. PLUGINS/TOOLS: ADD TOOLS WITHOUT REWRITING PROMPTS
+   Typed tools + tool registry:
+     - Strong tool schemas (distinct names, strict args)
+     - Operational descriptions (not vague)
+     - Runtime tool enable/disable by tenant/environment
+     - Policies: rate limits, auth scopes, allowlists/denylists, safe defaults
+
+   Static prompt rules for tools:
+     - Prompt does NOT list all tools (changes too often)
+     - Instead: "Use available tools; select minimal tool needed; follow schemas exactly"
+     - Tools are discovered from registry per request + policy
+
+7. MODULAR AND LAYERED ARCHITECTURE
+
+   A. Perception (input handling)
+      - Normalize user input (intent, entities, tenant, permissions)
+      - Route to skill(s) + retrieval queries
+
+   B. Reasoning (planning and cognitive logic)
+      - Use Plan -> Execute or ReAct loop
+      - Keep consistent across all skills (static instruction)
+      - Thinking models perform better with explicit, structured loops
+
+   C. Memory (context management)
+      - Short-term: conversation state, current task state
+      - Long-term: user prefs, prior segment decisions, successful recipes
+      - Store structured memories (not raw chat) and retrieve like knowledge
+
+   D. Action (tool calls)
+      - Tool selection: skill recipe + policy + confidence needs
+      - Tool calls logged with inputs/outputs for debugging (traces)
+
+   E. Feedback (self-assessment and improvement)
+      - Post-run checks: schema validity, grounding coverage, policy checks
+      - Automated evals: F1, task success, hallucination flags
+      - Failures feed into: skill text + retrieval + tool defs evolve
+        (prompt remains stable)
+
+8. CONCRETE STATIC PROMPT TEMPLATE (WHAT STAYS FIXED)
+   Operating rules (always follow):
+     - Loop: Plan -> Act -> Verify -> Improve (with stop conditions)
+     - Grounding: prefer tools/retrieval; don't invent
+     - Formatting: return JSON with schema X (or strict sections)
+     - Escalation: ask clarifying questions when missing required inputs
+   Everything else (skills, knowledge, tenant policies, tools) loads dynamically.
+
+9. KNOWN PROBLEMS TO SOLVE
+   - Stop paraphrase-based prompt mutation
+     -> Replace with skill selection + skill injection (versioned)
+   - Make segment outputs strictly typed
+     -> Structured outputs + validators + evals; reject invalid, retry with feedback
+   - Tool + knowledge grounding for explainability
+     -> Cite retrieved evidence (field metadata, model signals) instead of freeform
+   - Feature work becomes "add a skill," not "rewrite the agent"
+     -> Each epic becomes a skill pack with its own eval suite
+
+
+INSTRUCTIONS FOR EXECUTION
+--------------------------------------------------------------------------------
+1. Read and deeply understand the Smart-Segmentation codebase first.
+2. Conduct broad and deep research using web search, papers, and articles.
+3. Cross-reference findings with the prior research context above.
+4. Produce all four documents plus the INDEX.
+5. Ensure all citations are included with URLs where available.
+6. Be practical and actionable - this is for real implementation, not theory.
+7. Place all output in:
+   /Users/s0m0ohl/customer_segement/enterprise_agentic_research/research_1_sonnet_claude/
+
+================================================================================
+END OF PROMPT
+================================================================================
