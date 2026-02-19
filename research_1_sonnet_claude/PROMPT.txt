@@ -253,6 +253,46 @@ INSTRUCTIONS FOR EXECUTION
 7. Place all output in:
    /Users/s0m0ohl/customer_segement/enterprise_agentic_research/research_1_sonnet_claude/
 
+
+HTML VIEWER AUTO-HOOK
+--------------------------------------------------------------------------------
+An HTML viewer is already set up for this research. As you produce each document:
+
+1. The sidebar in index.html will automatically detect available documents
+   (green dot = available, gray dot = pending). No manual updates needed.
+
+2. Each document you create (01_*.md through 04_*.md) will be instantly
+   viewable through the HTML viewer at:
+     research_1_sonnet_claude/index.html
+
+3. The viewer renders markdown with an elegant dark/light theme, left sidebar
+   navigation with breadcrumbs, and a card-based home screen.
+
+4. After completing all documents, update INDEX.md to mark all deliverables
+   as "Done" in the status table.
+
+5. The hub page at enterprise_agentic_research/index.html links to all
+   research attempts. If creating a new research attempt, add a card entry
+   to the hub page as well.
+
+Viewer URLs (open in browser):
+  Hub:      enterprise_agentic_research/index.html
+  Research: enterprise_agentic_research/research_1_sonnet_claude/index.html
+
+GitHub:
+  Repo:  https://github.com/snehalvinit/enterprise-agentic-research
+  Pages: Enable GitHub Pages (Settings > Pages > main branch) to view online.
+
+
+GIT WORKFLOW
+--------------------------------------------------------------------------------
+After producing documents, commit and push:
+  cd /Users/s0m0ohl/customer_segement/enterprise_agentic_research
+  git add -A
+  git commit -m "Research 1: <brief description of what was added>"
+  git push origin main
+
+
 ================================================================================
 END OF PROMPT
 ================================================================================
