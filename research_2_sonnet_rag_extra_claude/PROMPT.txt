@@ -1,0 +1,178 @@
+RESEARCH PROMPT — research_2_sonnet_rag_extra_claude
+Model: Claude Sonnet 4.6 (claude-sonnet-4-6)
+Date: February 2026
+Session type: Full codebase deep-read + live web research + document generation
+
+═══════════════════════════════════════════════════════════════
+TASK OVERVIEW
+═══════════════════════════════════════════════════════════════
+
+Conduct comprehensive research to upgrade Smart-Segmentation from a
+single-tenant, Walmart-specific agent into a production-grade, enterprise
+agentic customer segmentation system. Produce 5 research documents plus
+an HTML viewer; update the enterprise hub index.
+
+═══════════════════════════════════════════════════════════════
+PART A — CODEBASE DEEP ANALYSIS
+═══════════════════════════════════════════════════════════════
+
+Repository: /Users/s0m0ohl/customer_segement/Smart-Segmentation
+
+Read and analyze every file that affects the core request→segment pipeline:
+- agentic_framework/agent.py (root agent)
+- agentic_framework/utils/milvus.py (vector DB layer)
+- agentic_framework/utils/embedding.py (embedding generator)
+- agentic_framework/sub_agents/new_segment_creation/ (full subtree)
+- agentic_framework/contextual_information/ (all .txt files)
+- agentic_framework/prompts/ (all prompt templates)
+- agentic_framework/utils/metadata.py (facet catalog loader)
+
+For each file, identify:
+  - Architectural bottlenecks (latency, error accumulation, coupling)
+  - Multi-tenancy gaps (hardcoded Walmart logic, static tenant config)
+  - Retrieval quality gaps (hybrid search, embedding model, NER pre-pass)
+  - Observability gaps (tracing coverage, eval metrics)
+  - Code-level bugs (e.g., typos that disable features)
+
+═══════════════════════════════════════════════════════════════
+PART A2 — GROUND TRUTH CSV ANALYSIS
+═══════════════════════════════════════════════════════════════
+
+File: ground_truth_cdi(Updated Ground Truth).csv
+
+Analyze:
+  - Row count and column structure
+  - Correction rate: how many rows have non-empty Remarks (required changes)?
+  - Facet count per row (original vs updated expected facets)
+  - Systematic patterns in corrections (e.g., Strict → non-Strict migration,
+    Propensity Division additions, date facet normalization)
+  - Implications for eval reliability (ground truth size vs eval confidence)
+
+═══════════════════════════════════════════════════════════════
+PART A3 — PIPELINE STAGE ANALYSIS
+═══════════════════════════════════════════════════════════════
+
+Map the full pipeline stage sequence:
+  Route → Decompose → Date → FVOM → Dependency → Classifier → Linked → Format
+
+For each stage:
+  - LLM calls: count and purpose
+  - Error accumulation: P(success) = 0.9^N math
+  - Collapse candidates: which stages can be merged safely?
+  - Rule-based replacements: which stages don't need LLM?
+
+═══════════════════════════════════════════════════════════════
+PART B — WEB RESEARCH (20 TOPICS)
+═══════════════════════════════════════════════════════════════
+
+Conduct live web research covering:
+
+ 1. Enterprise marketing segmentation with LLMs (Acxiom, PersonaBOT, ZenML)
+ 2. RAG for structured data (AI21, Kuzu graph RAG, Microsoft Azure)
+ 3. Hybrid BM25+dense benchmarks (BEIR, MTEB 2025/2026, Snowflake Cortex)
+ 4. Multi-tenant vector DB isolation (Qdrant v1.16, Weaviate, Pinecone BYOC, AWS Bedrock)
+ 5. LLM pipeline error accumulation (MAST taxonomy, AgentErrorTaxonomy)
+ 6. Few-shot RAG (DH-RAG, Atlas JMLR, PersonaBOT)
+ 7. Eval-first development tools (DeepEval, Braintrust, Promptfoo, EDDOps)
+ 8. Adobe CDP architecture (AI Assistant for Real-Time CDP 2024)
+ 9. Salesforce Einstein Marketing GPT (field registry + segment grounding)
+10. BGE vs MiniLM (MTEB scores, instruction prefix, domain fine-tuning)
+11. NuNER and NER pre-pass for retrieval pipelines
+12. Agentic memory systems (AgeMem, A-MEM, Mem0, DRAGIN)
+13. Two-stage cascade retrieval (Pinecone, NVIDIA, SystemOverflow)
+14. RAG chunk sizing (NVIDIA benchmark, LongRAG, LlamaIndex guide)
+15. Warehouse-native vector search (Snowflake Cortex, Roaring Bitmap facets)
+16. DSPy on Databricks (90× cost reduction, automated prompt optimization)
+17. Automated failure attribution (ICML 2025)
+18. Function calling vs semantic search for structured catalog lookup
+19. Arize Phoenix + Langfuse observability depth
+20. Enterprise ML + LLM hybrid patterns (ZenML 457 case studies)
+
+═══════════════════════════════════════════════════════════════
+PART C — DELIVERABLE DOCUMENTS
+═══════════════════════════════════════════════════════════════
+
+Output directory: enterprise_agentic_research/research_2_sonnet_rag_extra_claude/
+
+Documents to produce:
+
+  INDEX.md
+    - Overview of the research session
+    - 5 key discoveries (most impactful findings)
+    - Document status table
+    - Architecture transformation summary (current vs proposed)
+    - Estimated impact table (quality, latency, cost, onboarding)
+
+  01_bottleneck_analysis.md
+    - 18 bottlenecks with severity matrix (Critical/High/Medium)
+    - Code-level evidence (file:line references)
+    - Covers: Architecture, Facet Retrieval, Ground Truth Data,
+      Pipeline Stages, Multi-Tenant, Eval/Observability, Prompt Design
+
+  02_research_compendium.md
+    - State-of-the-art survey across 13 sections
+    - Academic papers + industry blogs + practitioner posts
+    - 50+ sources with relevance annotations
+    - Includes live web research findings (20 topics, 70+ URLs)
+
+  03_concrete_upgrade_proposal.md
+    - Section 1: Facet Retrieval Upgrade (decision matrix, cascade ASCII,
+      alias table, typed tool pattern, scaling to 1500 facets)
+    - Section 2: Pipeline Stage Refactor (7+ → 4 stages, verify functions,
+      collapsed classify+depend+link prompt)
+    - Section 3: Ground Truth as Runtime Few-Shot RAG (Python class,
+      prompt injection format, cold-start strategy)
+    - Section 4: Enterprise Domain Patterns (Adobe, Salesforce, Microsoft)
+    - Section 5: Cost Analysis (current vs target, per-call breakdown)
+
+  04_implementation_roadmap.md
+    - 5 phases with explicit week ranges
+    - Parallel execution tracks
+    - Risk registry with likelihood/impact/mitigation
+    - Success metrics per phase
+    - Exit criteria for each phase
+
+  PROMPT.txt
+    - This file: the original research prompt for reproducibility
+
+  index.html
+    - Single-page viewer for all 5 documents
+    - Dark/light theme toggle
+    - Sidebar navigation with document status dots
+
+═══════════════════════════════════════════════════════════════
+HUB UPDATE
+═══════════════════════════════════════════════════════════════
+
+Update enterprise_agentic_research/index.html to add this research
+as card #4 in the hub listing. Title: "RAG Deep Dive v2: Comprehensive
+Enterprise Upgrade (Sonnet — Full Analysis)". Tags: Sonnet 4.6,
+18 Bottlenecks, Cascade Retrieval, Tenant Config, Ground Truth RAG, DSPy.
+
+═══════════════════════════════════════════════════════════════
+KEY FINDINGS (summary for future reference)
+═══════════════════════════════════════════════════════════════
+
+B2.2 — CRITICAL BUG: Typo "hybird" at milvus.py:152 disables hybrid
+       search entirely. Hybrid search is implemented but unreachable.
+
+B1.1 — Static context loading: agent.py loads catalog_view_description.txt
+       at module import time (lines 72-73), making runtime tenant switching
+       impossible.
+
+B3.1 — Ground truth CSV has 46 rows (not 18,779 as estimated). 22/46 (47.8%)
+       rows have corrections. Eval dataset is valid but small.
+
+B2.1 — Embedding.py strips characters and lowercases but does NOT apply
+       BGE instruction prefix for short retrieval queries — quality gap.
+
+B1.3 — 7+ sequential LLM stages: P(success) = 0.9^7 ≈ 48% end-to-end
+       accuracy even with 90%+ per-stage accuracy.
+
+B4.1 — Only 2 hardcoded tenant keys in shortlist_generation.py and
+       metadata.py (email_mobile, cbb_id). All context files are
+       Walmart-specific and statically loaded.
+
+═══════════════════════════════════════════════════════════════
+END OF PROMPT
+═══════════════════════════════════════════════════════════════

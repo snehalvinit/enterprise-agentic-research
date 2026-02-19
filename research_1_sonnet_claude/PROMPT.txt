@@ -64,6 +64,59 @@ the retrieval strategy currently in use.
       the best refinement value for each shortlisted facet.
     - The ground truth CSV contains expected vs. predicted facets used for evals.
 
+  SAMPLE DATA (3 representative rows — read the full file for complete analysis):
+
+  Row 1:
+    Segment Name          : Test-Segment-WomenFashion
+    Description           : Build a segment for spring fashion shoppers looking to
+                            buy women's clothing and shoes possibly from Free Assembly.
+    expected facets       : Persona | Propensity Super Department Strict |
+                            Propensity Brand Strict
+    updated expected facets: Persona | Propensity Super Department |
+                            Propensity Division | Propensity Brand
+    Remarks on values     : Removed Propensity Super Department = "ACCESSORIES"
+    Predicted CDI         : (JSON blob — sessionId=2, context matches description)
+    Predicted E2F         : (JSON blob — sessionId=2, facet-operator-value mapping)
+
+  Row 2:
+    Segment Name          : Test-Segment-SpringCleaners
+    Description           : Build a segment for spring cleaners who want to get their
+                            yard and patio clean and fixed up with push engagement levels
+    expected facets       : CRM Push Engagement | Persona |
+                            Propensity Super Department Strict | Propensity Super Department
+    updated expected facets: CRM Push Engagement | Persona |
+                            Propensity Super Department | Propensity Division
+    Remarks on values     : (empty)
+    Predicted CDI/E2F     : sessionId=1
+
+  Row 3:
+    Segment Name          : Test-Segment-BabyPlanners
+    Description           : Build a segment for new parents who may have an active baby
+                            registry status and email engagement level between 0-90 days
+    expected facets       : CRM Email Engagement | Email Savings and Updates Opt-in |
+                            Persona | Propensity Super Department | Propensity Brand |
+                            Baby Registry Status
+    updated expected facets: CRM Email Engagement | Persona | Propensity Super Department |
+                            Propensity Brand | Propensity Division | Baby Registry Status
+    Remarks on values     : (empty)
+
+  KEY OBSERVATIONS FROM SAMPLE DATA:
+    - "expected facets" vs "updated expected facets" represent older vs. newer ground
+      truth — the "Strict" suffix variants (e.g., "Propensity Super Department Strict")
+      were deprecated in favor of non-strict versions; this means the facet name
+      retrieval must handle synonym/alias resolution (Strict vs. non-Strict).
+    - The "Predicted CDI" and "Predicted E2F" columns hold full JSON prediction
+      outputs from earlier model runs — compare against expected to measure accuracy.
+    - "Remarks on values" documents manual corrections made to expected facets —
+      these remarks are a gold mine for understanding edge cases and failure modes.
+    - The Segment Definition column contains the raw JSON segment definition output
+      (the final formatted output) — analyze for structural correctness and
+      completeness vs. what the description asked for.
+    - With 18,779 rows, compute aggregate statistics: how many rows have non-empty
+      Remarks (indicating a correction was needed)? How often does Predicted CDI
+      match expected facets exactly? What is the average number of expected facets
+      per segment (complexity metric)?
+
   Required analysis tasks (include findings in 01_bottleneck_analysis.md and
   recommendations in 03_concrete_upgrade_proposal.md):
 
@@ -115,21 +168,108 @@ the retrieval strategy currently in use.
          so it performs structured, type-aware retrieval instead of one big
          semantic search across all 500+ facets.
 
-  D. MULTI-TENANT SCALABILITY: WHEN THE CATALOG GETS BIGGER
-     The current system supports at least two tenant types (email_mobile vs
-     cbb_id). Research what to do when:
-       - A similar tenant has a larger facet catalog (1000+, 5000+)?
-       - Tenant-specific facets must be isolated but share common base facets?
-       - New tenants need to onboard their facet catalog without re-indexing all?
-     Recommend:
-       - Partitioning strategies (already using date partitions in Milvus —
-         extend to tenant partitions)
-       - Namespace / tenant-scoped vector indexes vs. shared index with
-         metadata filter — trade-offs at scale
-       - Catalog versioning and incremental re-indexing on facet updates
-       - LLM-level quality approaches that do NOT degrade with catalog growth:
-         e.g., two-stage retrieval (coarse filter → LLM rerank), LLM-generated
-         structured queries, or dynamic few-shot selection from ground truth CSV
+  D. MULTI-TENANT: NEW TENANT WITH A SIMILAR BUT DIFFERENT DATASET
+     The primary multi-tenant concern is NOT just scale — it is onboarding a
+     new tenant who brings a dataset that is structurally similar to the current
+     one but uses different facet names, different ground truth rows, different
+     contextual descriptions, and potentially different domain vocabulary.
+     Example: current tenant = Walmart (email_mobile, cbb_id facet catalogs).
+     New tenant = a similar retailer with ~400-600 facets, their own ground
+     truth CSV (same 14-column structure), their own refinement descriptions,
+     but different facet names, different propensity categories, different brand
+     lists, and different business rules.
+
+     The system must be READY for this WITHOUT requiring:
+       - Code changes to the pipeline stages
+       - Rewriting any static prompts
+       - Re-training or fine-tuning any embedding model
+       - Changes to the core agent architecture
+
+     Required research and recommendations — cover in both bottleneck analysis
+     (what is currently hardcoded/tenant-specific) and upgrade proposal
+     (how to make it tenant-agnostic):
+
+     D1. WHAT IS CURRENTLY HARDCODED PER TENANT (IDENTIFY IN CODE):
+       - contextual_information/contextual_information_on_refinements.txt —
+         this is injected into facet_classifier_matcher_prompt.txt as static
+         text; it is specific to the current tenant's refinement vocabulary.
+         A new tenant would need their own version. Is this swappable at
+         runtime today? It is not — it is loaded as a static file. Flag this
+         as a critical hardcoded bottleneck.
+       - contextual_information/catalog_view_description.txt — same issue;
+         describes current tenant's catalog structure.
+       - contextual_information/segment_decomposer_hints.txt and
+         facet_value_mapper_hints.txt — these are tenant-specific hint files
+         injected into prompts. A new tenant's domain may require different
+         hints.
+       - contextual_information/channel_date_attribute_map.json — maps
+         purchase channels (ONLINE, STORE) to date facet names; these names
+         are tenant-specific.
+       - The ground truth CSV is only used for eval today — it is NOT used
+         at runtime as few-shot context. A new tenant's ground truth CSV
+         would need to be onboarded into the eval framework, but also into
+         runtime few-shot retrieval if that pattern is adopted.
+       - Milvus collections are named with tenant identifiers in env vars
+         (MILVUS_FACET_NAME_COLLECTION, MILVUS_FACET_VALUE_COLLECTION) —
+         these are runtime-configurable, which is good. But the collection
+         schema and embedding model are shared.
+
+     D2. TENANT ONBOARDING BLUEPRINT — WHAT SHOULD THE ARCHITECTURE SUPPORT:
+       Research and recommend a concrete onboarding flow so that a new tenant
+       with a similar dataset can be onboarded without code changes:
+         - Tenant config file / manifest: defines tenant ID, facet catalog
+           source (BigQuery table / pickle / CSV), Milvus collection names,
+           contextual info file paths, ground truth CSV path, embedding model,
+           and any tenant-specific restrictions or business rules.
+         - Tenant-scoped contextual info store: each tenant has their own
+           set of contextual_information files, loaded at runtime based on
+           tenant ID. Research how to make this dynamic.
+         - Tenant-scoped ground truth: each tenant has their own ground truth
+           CSV. Research how to: (a) run per-tenant evals without mixing data,
+           and (b) use that CSV as dynamic few-shot context at inference time
+           (retrieve the closest historical segment definition for this tenant).
+         - Tenant-scoped Milvus partition or collection: should each tenant
+           get a separate collection (strong isolation, higher infra cost) or
+           a shared collection with tenant_id metadata filter (lower cost,
+           risk of cross-tenant bleed)? Research trade-offs at 2-10 tenants.
+         - Zero-code tenant vocabulary adaptation: when a new tenant's facet
+           names are different (e.g., "Affinity Score" instead of "Propensity"),
+           how does the system learn this mapping without prompt surgery?
+           Research: embedding-based alias resolution, tenant synonym tables,
+           LLM-generated vocabulary bridge at onboarding time.
+         - Per-tenant prompt hints and contextual info injection: the hints
+           files (decomposer_hints, fvom_hints, refinements context) must
+           be generatable or customizable per tenant. Research: can an LLM
+           generate these hint files automatically from a new tenant's facet
+           catalog + a few labeled examples? What is the minimum human input
+           needed to onboard a new tenant?
+
+     D3. QUALITY PARITY ACROSS TENANTS:
+       Research how to ensure a new tenant gets the same LLM output quality
+       as the primary tenant even with:
+         - Fewer ground truth examples (new tenants start with less history)
+         - Different facet vocabulary (no synonym overlap with existing model)
+         - No tenant-specific fine-tuning (must work zero-shot or few-shot)
+       Techniques to research:
+         - Cross-tenant few-shot transfer: can the primary tenant's ground
+           truth rows that share similar segment types (persona, propensity,
+           date-based) be reused as few-shot examples for a new tenant?
+         - Universal facet taxonomy: can a shared abstract taxonomy
+           (persona, propensity, engagement, purchase, registry, date) bridge
+           tenant-specific naming so the LLM reasons at the abstract level
+           and maps to tenant-specific names at retrieval time?
+         - Tenant cold-start strategy: minimum viable dataset a new tenant
+           must provide (e.g., 50 labeled segment→facet pairs) to reach
+           acceptable quality. Research evidence from enterprise RAG cold-start
+           literature.
+
+     D4. SCALE READINESS (SIZE IS NOT THE PRIMARY CONCERN, BUT NOTE IT):
+       Once the above tenant-agnostic architecture is in place, also address
+       what changes if a tenant's catalog is moderately larger (~800-1500
+       facets, not just 500). The system should handle this without special
+       casing — the tenant config, partitioning, and retrieval approach should
+       scale naturally. Identify the thresholds where additional engineering
+       is needed vs. where the architecture handles it transparently.
 
 
 PART A3: PIPELINE STAGE ANALYSIS — DO WE NEED THEM?
