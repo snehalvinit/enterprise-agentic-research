@@ -493,6 +493,14 @@
 
         <div class="sidebar-nav">
             <div class="nav-group">
+                <div class="nav-group-label">⭐ Start Here</div>
+                <a class="nav-item" data-doc="00_master_summary.md" onclick="loadDoc('00_master_summary.md', this)">
+                    <span class="num" style="background:linear-gradient(135deg,#10b981,#6366f1);color:#fff;">★</span> Master Summary
+                    <span class="status-dot ready"></span>
+                </a>
+            </div>
+
+            <div class="nav-group">
                 <div class="nav-group-label">Overview</div>
                 <a class="nav-item active" data-doc="INDEX.md" onclick="loadDoc('INDEX.md', this)">
                     <span class="num">~</span> Index &amp; Overview
@@ -556,6 +564,7 @@
 
     <script>
         const docMeta = {
+            '00_master_summary.md':           { title: 'Master Summary & Recommendations', num: '★',  short: 'Summary' },
             'INDEX.md':                       { title: 'Index & Overview',       num: '~',  short: 'Index' },
             'PROMPT.txt':                     { title: 'Research Prompt',        num: 'P',  short: 'Prompt' },
             '01_bottleneck_analysis.md':      { title: 'Bottleneck Analysis',    num: '01', short: 'Bottlenecks' },
@@ -567,6 +576,8 @@
         };
 
         const cards = [
+            { file: '00_master_summary.md',            num: '★',  title: 'Master Summary & Recommendations',
+              desc: 'Start here. All 6 docs consolidated in plain English — concepts explained with real codebase examples, prioritized recommendations, quick wins, and a complete glossary.' },
             { file: '01_bottleneck_analysis.md',       num: '01', title: 'Bottleneck Analysis',
               desc: 'All issues with the current Smart-Segmentation approach — architecture flaws, prompt design, eval gaps, scalability limits.' },
             { file: '02_research_compendium.md',       num: '02', title: 'Research Compendium',
@@ -656,6 +667,11 @@
                         Deep analysis of the codebase, state-of-the-art research, and a concrete upgrade plan.
                     </p>
                     <div class="card-grid">
+                        <div class="card" style="grid-column:1/-1;border-color:#10b981;background:linear-gradient(135deg,rgba(16,185,129,0.08),rgba(99,102,241,0.08));" onclick="loadDoc('00_master_summary.md', document.querySelector('[data-doc=\\'00_master_summary.md\\']'))">
+                            <span class="card-num" style="background:linear-gradient(135deg,#10b981,#6366f1);color:#fff;">⭐ START HERE</span>
+                            <h3>Master Summary &amp; Recommendations</h3>
+                            <p>All 6 docs consolidated in plain English. Every concept explained with real codebase examples. Prioritized recommendations, quick wins, impact tables, and a full glossary. Read this first.</p>
+                        </div>
                         <div class="card" onclick="loadDoc('INDEX.md', document.querySelector('[data-doc=\\'INDEX.md\\']'))">
                             <span class="card-num">INDEX</span>
                             <h3>Research Overview</h3>
