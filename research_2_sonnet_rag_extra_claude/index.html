@@ -526,6 +526,10 @@
                     <span class="num">05</span> AI Coding Tools
                     <span class="status-dot ready"></span>
                 </a>
+                <a class="nav-item" data-doc="06_internal_architectures_and_applicable_patterns.md" onclick="loadDoc('06_internal_architectures_and_applicable_patterns.md', this)">
+                    <span class="num">06</span> Internal Architectures
+                    <span class="status-dot ready"></span>
+                </a>
             </div>
         </div>
 
@@ -558,7 +562,8 @@
             '02_research_compendium.md':      { title: 'Research Compendium',    num: '02', short: 'Research' },
             '03_concrete_upgrade_proposal.md':{ title: 'Concrete Upgrade Proposal', num: '03', short: 'Proposal' },
             '04_implementation_roadmap.md':   { title: 'Implementation Roadmap', num: '04', short: 'Roadmap' },
-            '05_ai_coding_tools_for_enterprise_agents.md': { title: 'AI Coding Tools for Enterprise Agents', num: '05', short: 'AI Tools' }
+            '05_ai_coding_tools_for_enterprise_agents.md': { title: 'AI Coding Tools for Enterprise Agents', num: '05', short: 'AI Tools' },
+            '06_internal_architectures_and_applicable_patterns.md': { title: 'Internal Architectures & Applicable Patterns', num: '06', short: 'Internals' }
         };
 
         const cards = [
@@ -571,7 +576,9 @@
             { file: '04_implementation_roadmap.md',    num: '04', title: 'Implementation Roadmap',
               desc: 'Prioritized step-by-step plan with parallel tracks, dependencies, risks, and reasoning.' },
             { file: '05_ai_coding_tools_for_enterprise_agents.md', num: '05', title: 'AI Coding Tools for Enterprise Agents',
-              desc: 'How Claude Code, GitHub Copilot & Cursor solve enterprise agent challenges — capabilities, decision matrix, and workflow patterns for marketing/CRM agents.' }
+              desc: 'How Claude Code, GitHub Copilot & Cursor solve enterprise agent challenges — capabilities, decision matrix, and workflow patterns for marketing/CRM agents.' },
+            { file: '06_internal_architectures_and_applicable_patterns.md', num: '06', title: 'Internal Architectures & Applicable Patterns',
+              desc: 'HOW Claude Code, Cursor & Copilot are built internally — ReAct loops, codebase RAG, shadow execution, sub-agent orchestration — and how to copy every pattern for your own CRM agent.' }
         ];
 
         // ─── Load document ───

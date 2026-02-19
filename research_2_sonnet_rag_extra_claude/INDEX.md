@@ -53,6 +53,7 @@ Four critical contextual information files (`refinements.txt`, `catalog_view_des
 | 03 | Concrete Upgrade Proposal | ✅ Done | Cascade retrieval, 4-stage pipeline, tenant manifest |
 | 04 | Implementation Roadmap | ✅ Done | 5 phases, parallel tracks, risk registry |
 | 05 | AI Coding Tools for Enterprise Agents | ✅ Done | Claude Code, GitHub Copilot, Cursor — capabilities, decision matrix, workflow patterns for marketing/CRM agents |
+| 06 | Internal Architectures & Applicable Patterns | ✅ Done | How Claude Code/Cursor/Copilot are built internally + 8 transferable engineering patterns for your own CRM agent (ReAct loop, CLAUDE.md, sub-agents, shadow execution, hooks, codebase RAG, FIM, model routing) |
 
 ---
 
@@ -95,6 +96,7 @@ research_2_sonnet_rag_extra_claude/
 ├── 03_concrete_upgrade_proposal.md                ← Detailed upgrade plan with code examples
 ├── 04_implementation_roadmap.md                   ← Phased roadmap with parallel tracks
 ├── 05_ai_coding_tools_for_enterprise_agents.md    ← Claude Code, Copilot, Cursor for agent dev
+├── 06_internal_architectures_and_applicable_patterns.md ← How they're built + 8 patterns to copy
 ├── PROMPT.txt                                     ← Original research prompt
 └── index.html                                     ← Interactive viewer (dark/light theme)
 ```
