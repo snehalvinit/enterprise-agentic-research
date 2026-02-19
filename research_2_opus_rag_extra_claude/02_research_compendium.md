@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-This compendium surveys **125+ sources** across **18 research topic areas**, with deep focus on the specific challenges facing Smart-Segmentation: whether embedding-based RAG is appropriate for a structured facet catalog, how to collapse a 7-stage LLM pipeline, how to use ground truth data at runtime, and how to architect multi-tenant isolation. Every finding is evaluated for practical applicability to the system upgrade.
+This compendium surveys **140+ sources** across **19 research topic areas**, with deep focus on the specific challenges facing Smart-Segmentation: whether embedding-based RAG is appropriate for a structured facet catalog, how to collapse a 7-stage LLM pipeline, how to use ground truth data at runtime, and how to architect multi-tenant isolation. Every finding is evaluated for practical applicability to the system upgrade.
 
 **Top 5 Actionable Findings:**
 
@@ -42,6 +42,7 @@ This compendium surveys **125+ sources** across **18 research topic areas**, wit
 16. [Observability, Evaluation, and Tracing](#16-observability-evaluation-and-tracing)
 17. [Cost Optimization Strategies](#17-cost-optimization-strategies)
 18. [AI Coding Tools for Enterprise Agent Development](#18-ai-coding-tools-for-enterprise-agent-development)
+19. [Internal Architectures: Implementation Patterns Applicable to Enterprise Agents](#19-internal-architectures-implementation-patterns-applicable-to-enterprise-agents)
 
 ---
 
@@ -943,6 +944,415 @@ The same engine powering Claude Code, exposed as a Python/TypeScript library:
 
 ---
 
+## 19. Internal Architectures: Implementation Patterns Applicable to Enterprise Agents
+
+> How Claude Code, GitHub Copilot, and Cursor are **built internally** — and which architectural patterns you can directly apply to building your own enterprise marketing/CRM/customer segmentation agents.
+
+### 19.1 Claude Code: Master Agent Loop Architecture
+
+**Source:** PromptLayer — "Claude Code: Behind the Scenes of the Master Agent Loop" (2025)
+- URL: https://blog.promptlayer.com/claude-code-behind-the-scenes-of-the-master-agent-loop/
+
+**Source:** Anthropic — "Building Effective Agents" (2025)
+- URL: https://www.anthropic.com/research/building-effective-agents
+
+**The nO Agent Loop:**
+Claude Code runs a single-threaded `while(tool_call)` loop with flat message history. The loop terminates only when the model produces plain text (no tool call). Key design:
+- Messages accumulate in a flat list — no tree structure, no branching
+- Each iteration: send full message history → model responds with tool call or text → execute tool → append result → repeat
+- A steering queue (h2A) enables real-time mid-task course correction without breaking the loop
+- The model itself decides which tool to use — no classifiers, no embeddings, no routing logic — pure LLM reasoning on tool descriptions
+
+**Applicability to Segmentation Agent:**
+```
+while segment_not_complete:
+    context = [user_query, facet_catalog, ground_truth_examples, current_segment_state]
+    response = llm(context)  # Model decides: search facets? validate? ask user?
+    if response.is_tool_call:
+        result = execute(response.tool)  # Cascade retrieval, validation, etc.
+        context.append(result)
+    else:
+        return response  # Final segment definition
+```
+The key insight: **don't hardcode pipeline stages** — let the model decide what to do next based on current state. This replaces the rigid 7-stage pipeline with an adaptive loop.
+
+---
+
+### 19.2 Claude Code: Context Engineering and Compaction
+
+**Source:** Anthropic — "Effective Context Engineering for AI Agents" (2025)
+- URL: https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents
+
+**Source:** Anthropic — "Effective Harnesses for Long-Running Agents" (2025)
+- URL: https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents
+
+**Three-Technique Context Management:**
+
+1. **Compaction:** When context reaches ~92% capacity, a summarization pass compresses the conversation while preserving critical information. The compactor is itself an LLM call that produces a shorter version of the history.
+
+2. **Structured Notes:** Key facts are extracted and stored outside the main context as structured data. When context is rebuilt after compaction, these notes are injected back as high-priority context.
+
+3. **Sub-Agent Isolation:** Complex sub-tasks are delegated to sub-agents with their own isolated context windows. Only the final result (not the full sub-agent conversation) returns to the parent context.
+
+**Applicability to Segmentation Agent (57 State Variables):**
+- **Context budget allocation:** Assign token budgets per information type:
+  - User query + conversation: 15%
+  - Facet catalog (relevant subset): 25%
+  - Ground truth few-shot examples: 20%
+  - Current segment state: 15%
+  - Tool results: 25%
+- **Compaction trigger:** When state variables exceed context budget, summarize older tool results while preserving the current segment definition and user intent
+- **Structured notes:** Extract and persist: selected facets, user preferences, validation errors — these survive compaction
+
+---
+
+### 19.3 Claude Code: Sub-Agent Orchestration Model
+
+**Source:** Anthropic — "Multi-Agent Research System" (2025)
+- URL: https://www.anthropic.com/engineering/multi-agent-research-system
+
+**Isolation Model:**
+- Sub-agents are **depth-limited** — they cannot spawn their own sub-agents
+- At most **one sub-agent branch runs at a time** (sequential, not parallel in the core loop)
+- Sub-agent results return as **standard tool outputs** — the parent sees only the final answer, not the sub-agent's internal conversation
+- Sub-agents get a **custom system prompt, specific tool access, and independent permissions**
+
+**Anthropic's Multi-Agent Research System:**
+- Lead agent delegates to multiple specialized sub-agents (each researching different aspects)
+- Achieves **90% faster research** with **15x token cost** (accepted trade-off: thoroughness > cost)
+- Sub-agents run in parallel with isolated contexts, preventing cross-contamination
+
+**Applicability to Segmentation Agent:**
+```
+Segment Orchestrator (parent)
+├── Facet Discovery Agent (sub-agent: tools = [cascade_retriever, catalog_search])
+│   └── Returns: ranked facet candidates
+├── Segment Builder Agent (sub-agent: tools = [rule_composer, value_mapper])
+│   └── Returns: segment definition JSON
+├── Validation Agent (sub-agent: tools = [ground_truth_checker, constraint_validator])
+│   └── Returns: validation report + corrections
+└── Optimization Agent (sub-agent: tools = [dspy_optimizer, cost_analyzer])
+    └── Returns: optimized prompt/parameters
+```
+Each sub-agent sees only what it needs — the Validation Agent never sees the raw facet catalog, only the built segment definition.
+
+---
+
+### 19.4 Claude Code: MCP Protocol Architecture
+
+**Source:** MCP Specification — Architecture Overview
+- URL: https://modelcontextprotocol.io/docs/learn/architecture
+
+**Three-Tier Participant Model:**
+1. **Host** — the application (your agent system) that manages security, permissions, and lifecycle
+2. **Client** — maintains 1:1 connection with a server, handles protocol negotiation
+3. **Server** — exposes tools, resources, and prompts through a standardized interface
+
+**Two Layers:**
+- **Data layer:** JSON-RPC 2.0 for structured request/response
+- **Transport layer:** stdio (local), HTTP+SSE (remote), or Streamable HTTP
+
+**Three Server Primitives:**
+- **Tools** — model-controlled functions (e.g., `search_facets`, `validate_segment`)
+- **Resources** — application-controlled data (e.g., facet catalog, tenant config)
+- **Prompts** — user-controlled templates (e.g., segment decomposition prompts)
+
+**Capability Negotiation:** At initialization, client and server exchange supported capabilities — the host can restrict which tools/resources each agent can access.
+
+**Applicability to Segmentation Agent:**
+MCP provides the exact pattern for multi-tenant tool isolation:
+```yaml
+# Tenant A MCP Server
+tools:
+  - search_facets:  {catalog: "tenant_a_catalog", restrictions: [...]}
+  - validate_segment: {rules: "tenant_a_rules"}
+resources:
+  - facet_catalog: "s3://tenant-a/catalog.json"
+  - ground_truth: "s3://tenant-a/ground_truth.csv"
+
+# Tenant B MCP Server (different catalog, different rules)
+tools:
+  - search_facets:  {catalog: "tenant_b_catalog", restrictions: [...]}
+```
+Each tenant gets their own MCP server with tenant-specific tools and resources — the agent code stays identical.
+
+---
+
+### 19.5 Claude Code: Agent Skills Architecture
+
+**Source:** Anthropic — "Equipping Agents for the Real World with Agent Skills" (2025)
+- URL: https://claude.com/blog/equipping-agents-for-the-real-world-with-agent-skills
+
+**Source:** The New Stack — "Agent Skills: Anthropic's Next Bid to Define AI Standards"
+- URL: https://thenewstack.io/agent-skills-anthropics-next-bid-to-define-ai-standards/
+
+**Three-Tier Progressive Disclosure:**
+1. **Tier 1 — Prompt-only skills:** Just a SKILL.md file with instructions (no tools needed)
+2. **Tier 2 — Tool-using skills:** SKILL.md + MCP tools the skill can invoke
+3. **Tier 3 — Sub-agent skills:** Full sub-agent with isolated context and specialized tools
+
+**Skill Discovery:** No algorithmic routing — the model reads skill descriptions and decides which skill to activate based on the user's request. Skills are packaged as folders with a SKILL.md manifest.
+
+**Applicability to Segmentation Agent (Replacing 23 Static Prompts):**
+```
+skills/
+├── segment_decomposition/
+│   ├── SKILL.md          # "Decompose NL queries into sub-segments with INCLUDE/EXCLUDE rules"
+│   ├── examples/         # Ground truth examples for few-shot
+│   └── tools.json        # MCP tools this skill can use
+├── facet_matching/
+│   ├── SKILL.md          # "Match sub-segments to facet-value pairs using cascade retrieval"
+│   ├── examples/
+│   └── tools.json
+├── date_extraction/
+│   ├── SKILL.md          # "Extract and normalize date ranges from segment queries"
+│   └── rules.json        # Deterministic date patterns (no LLM needed)
+└── segment_validation/
+    ├── SKILL.md          # "Validate segment against ground truth and business rules"
+    ├── examples/
+    └── tools.json
+```
+This replaces 23 hardcoded prompt files with versioned, composable skill bundles. New tenants can override specific skills without touching core code.
+
+---
+
+### 19.6 Cursor: 5-Stage Codebase Indexing Pipeline
+
+**Source:** Engineer's Codex — "How Cursor Indexes Codebases Fast" (2025)
+- URL: https://read.engineerscodex.com/p/how-cursor-indexes-codebases-fast
+
+**Source:** Turbopuffer — "Cursor Scales to 100B+ Vectors" (2025)
+- URL: https://turbopuffer.com/customers/cursor
+
+**The Pipeline:**
+
+1. **AST Chunking:** tree-sitter parses source files into Abstract Syntax Trees. Chunks are semantically meaningful (functions, classes, blocks) rather than arbitrary token windows.
+
+2. **Merkle Tree Sync:** At startup, a hash tree of all files is computed locally. Only changed files (different hashes) are re-indexed — no full re-embedding on every startup.
+
+3. **Embedding Generation:** Chunks are embedded using OpenAI or custom models. Metadata (file path, start/end lines) is attached to each vector.
+
+4. **Turbopuffer Storage:** Vectors stored in Turbopuffer (100B+ vectors across all Cursor users). **Namespace-per-codebase** isolation. Queries hit only the relevant namespace.
+
+5. **Incremental Updates:** File watcher triggers re-indexing of changed files every ~10 minutes. Only diffs are re-embedded, not the entire codebase.
+
+**Applicability to Facet Catalog Indexing:**
+```
+1. AST Chunking → Facet Chunking
+   Each facet = one chunk (name, type, description, values, hierarchy)
+   Natural boundaries — no artificial splitting needed
+
+2. Merkle Tree → Change Detection for Catalogs
+   Hash the facet catalog. When tenant updates their catalog,
+   only re-embed changed/new facets (not all 500)
+
+3. Embedding → Multi-Index Embeddings
+   Generate embeddings for facet names AND facet descriptions AND facet values
+   Store in separate Milvus collections for targeted retrieval
+
+4. Namespace-per-Tenant → Collection-per-Tenant
+   Each tenant's facets in an isolated Milvus namespace
+   Queries never cross tenant boundaries
+
+5. Incremental → CDC (Change Data Capture)
+   When a tenant adds/modifies facets, CDC triggers re-embedding
+   of only affected vectors — no full re-index
+```
+
+---
+
+### 19.7 Cursor: Two-Step Apply Model (Intent + Execution)
+
+**Source:** Fireworks AI — "How Cursor Built Fast Apply" (2025)
+- URL: https://fireworks.ai/blog/cursor
+
+**The Pattern:**
+Cursor separates code generation into two distinct steps:
+1. **Primary LLM generates a semantic diff** — what needs to change, expressed as high-level intent (e.g., "replace lines 45-60 with a new function that validates facets")
+2. **Custom Apply Model integrates the diff** — a specialized, fast model that takes the semantic diff + original file and produces the actual modified file
+
+**Why two steps?**
+- The primary LLM is slow but smart — it understands what to change
+- The Apply model is fast but narrow — it only needs to merge a diff into existing code
+- Combined: ~1000 tok/s on a 70B model (13x speedup over generating the full file)
+
+**Speculative Edits:**
+Cursor pre-generates likely edits before the user requests them, caching them for instant application. Uses a smaller model to predict probable next changes.
+
+**Applicability to Segmentation Agent (Intent + Execution Split):**
+```
+Step 1: LLM generates semantic intent
+   Input: "customers who buy electronics online"
+   Output: {
+     intent: "INCLUDE",
+     facets: [
+       {name: "Propensity Super Department", value: "ELECTRONICS", op: "equals"},
+       {name: "Purchase Channel", value: "ONLINE", op: "equals"}
+     ],
+     confidence: 0.85
+   }
+
+Step 2: Deterministic engine executes
+   Input: semantic intent + facet catalog + validation rules
+   Output: validated SegmentR JSON with resolved dependencies,
+           correct operators, linked facets, formatted values
+```
+This is exactly the pipeline collapse pattern: the LLM does the semantic reasoning (intent), and deterministic code does the execution (formatting, validation, dependency resolution). No LLM needed for steps that are rule-based.
+
+---
+
+### 19.8 Cursor: 8 Parallel Agents with Git Worktree Isolation
+
+**Source:** ByteByteGo — "How Cursor Shipped its Coding Agent" (2025)
+- URL: https://blog.bytebytego.com/p/how-cursor-shipped-its-coding-agent
+
+**Source:** Nitinr Blog — "Cursor 2.0 Enables Eight Agents in Parallel" (2025)
+- URL: https://blog.nitinr.live/news/2025/10/cursor-2.0-enables-eight-agents-to-work-in-parallel-without-interfering-with-each-other/
+
+**The Pattern:**
+- Each of the 8 agents operates on an **isolated copy of the codebase** via git worktrees
+- Agents cannot see each other's changes during execution
+- After completion, an **aggregated diff viewer** shows all changes side-by-side
+- **Auto-merge** combines non-conflicting changes; **divergence flagging** highlights conflicts for human resolution
+
+**Applicability to Multi-Facet Parallel Search:**
+```
+User query: "Fashion-conscious millennials who buy electronics online
+             and have high email engagement"
+
+Agent 1: Search "Fashion" → Persona facets
+Agent 2: Search "millennials" → Demographic facets
+Agent 3: Search "electronics" → Propensity Super Department facets
+Agent 4: Search "online" → Purchase Channel facets
+Agent 5: Search "high email engagement" → CRM Email facets
+
+Each agent:
+- Has isolated context (only its search domain)
+- Uses the cascade retrieval pipeline independently
+- Returns ranked candidates with confidence scores
+
+Merge step:
+- Combine all facet candidates
+- Deduplicate overlapping facets
+- Flag conflicts (e.g., Agent 1 and Agent 3 both suggest "Propensity Brand")
+- Present unified shortlist for validation
+```
+This replaces the current sequential shortlist generation (one facet at a time) with parallel search across domains — potential 3-5x latency reduction for complex multi-facet queries.
+
+---
+
+### 19.9 GitHub Copilot: Self-Healing Agent Loop
+
+**Source:** GitHub — "About the Coding Agent" (2025)
+- URL: https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent
+
+**The Loop:**
+```
+1. EXECUTE: Run the generated code/command
+2. DETECT: Analyze output for errors (test failures, lint errors, type errors)
+3. DIAGNOSE: Use LLM to understand root cause of error
+4. FIX: Generate corrected code
+5. VERIFY: Re-run to confirm fix
+6. REPEAT: If still failing, back to step 3 (with max retry limit)
+```
+
+**Sandbox Model:**
+- Runs in GitHub Actions VMs with **firewall-controlled internet** (allowlist for package registries only)
+- **Read-only repo access** — changes go to a `copilot/` branch
+- All changes require **human approval via draft PR**
+
+**Applicability to Segment Validation Loop:**
+```
+1. EXECUTE: Generate segment definition from user query
+2. DETECT: Validate against ground truth — check if similar queries
+   produced different facets in the past
+3. DIAGNOSE: If validation score < threshold:
+   - Which facets diverge from ground truth?
+   - Is it a facet naming issue or a semantic mismatch?
+4. FIX: Auto-correct based on diagnosis:
+   - Swap "Propensity Brand" → "Propensity Brand Strict" if ground truth says so
+   - Add missing "Propensity Division" if pattern matches
+5. VERIFY: Re-score against ground truth
+6. REPEAT: Up to 3 iterations, then flag for human review
+```
+This transforms passive validation into active self-correction — the system learns from its own mistakes in real-time.
+
+---
+
+### 19.10 GitHub Copilot: Matryoshka Embedding Model
+
+**Source:** InfoQ — "GitHub's Custom Embedding Model" (2025)
+- URL: https://www.infoq.com/news/2025/10/github-embedding-model/
+
+**Architecture:**
+- **Matryoshka Representation Learning (MRL):** Embeddings are nested — the first N dimensions contain a valid lower-dimensional embedding. You can truncate without retraining.
+- **Contrastive Learning (InfoNCE loss):** Trained to maximize similarity between semantically similar code chunks and minimize similarity for unrelated chunks
+- **Results:** 37.6% retrieval improvement over OpenAI ada-002, 8x memory reduction (via dimension truncation), 2x throughput
+
+**Applicability to Facet Embedding:**
+- Use MRL for facet name embeddings — store full 768-dim for precision search, truncate to 128-dim for fast initial filtering
+- Two-tier search: fast approximate search on truncated embeddings → precise rerank on full embeddings
+- 8x memory reduction means all 500 facets fit in ~400KB rather than 3.2MB — enabling in-memory search without Milvus for small catalogs
+
+---
+
+### 19.11 Cursor: MoE Routing for Model Selection
+
+**Source:** Various Cursor architecture analyses (2025-2026)
+
+**How Cursor's Composer Works:**
+- Mixture-of-Experts (MoE) architecture: tokens are routed to specialized expert sub-networks
+- Not all experts activate for every token — only the relevant ones fire
+- Trained with RL in live coding environments (real editing sessions, real feedback)
+- Result: 250 tok/s, 4x faster than comparable dense models
+
+**Applicability to Pipeline Stage Model Routing:**
+```
+Segment Pipeline MoE Router:
+┌─────────────────────────────────────────────────┐
+│ Input: user query + current pipeline state       │
+├─────────────────────────────────────────────────┤
+│ Route to Expert:                                 │
+│   "buy electronics" → Expert: Facet Matching     │
+│     → Model: Sonnet (fast, structured output)    │
+│   "high propensity" → Expert: Score Reasoning    │
+│     → Model: Opus (complex reasoning needed)     │
+│   "last 30 days" → Expert: Date Extraction       │
+│     → Model: Rules Engine (no LLM needed)        │
+│   "format as SegmentR" → Expert: Formatting      │
+│     → Model: Deterministic Code (no LLM needed)  │
+└─────────────────────────────────────────────────┘
+
+Cost impact:
+  Before: All 7 stages use same expensive model → $0.15/segment
+  After:  Route by complexity → $0.04/segment (73% reduction)
+    - 2 stages use Opus ($0.03)
+    - 1 stage uses Sonnet ($0.008)
+    - 2 stages use rules ($0.00)
+    - 1 stage uses code ($0.00)
+```
+
+---
+
+### 19.12 Summary: 12 Patterns from AI Tool Internals → Enterprise Agent Building
+
+| # | Pattern | Source Tool | Internal Implementation | Your Segmentation Agent Application |
+|---|---------|------------|------------------------|-------------------------------------|
+| 1 | **Adaptive Agent Loop** | Claude Code | `while(tool_call)` with LLM-driven tool selection | Replace rigid 7-stage pipeline with adaptive gather→act→verify loop |
+| 2 | **Context Compaction** | Claude Code | Summarize at 92% capacity, preserve structured notes | Budget 57 state variables across context window; compact older tool results |
+| 3 | **Sub-Agent Isolation** | Claude Code | Depth-limited, isolated context, result-only return | Separate agents for facet discovery, segment building, validation, optimization |
+| 4 | **MCP Tool Isolation** | Claude Code | Host→Client→Server with capability negotiation | Per-tenant MCP servers with tenant-specific tools, catalogs, and rules |
+| 5 | **Skill Bundles** | Claude Code | SKILL.md + tools.json + examples/ folders | Replace 23 static prompts with versioned, composable skill packages |
+| 6 | **AST-Based Indexing** | Cursor | tree-sitter chunking → Merkle sync → incremental embedding | Facet-as-chunk indexing with CDC for catalog updates; namespace-per-tenant |
+| 7 | **Two-Step Apply** | Cursor | LLM generates intent → fast model executes diff | LLM generates semantic facet intent → deterministic engine produces SegmentR |
+| 8 | **Parallel Agent Search** | Cursor | 8 git worktree-isolated agents with merge | Multi-domain parallel facet search (demographic, behavioral, engagement, etc.) |
+| 9 | **Self-Healing Loop** | Copilot | Execute→detect→diagnose→fix→verify→repeat | Segment validation with auto-correction from ground truth patterns |
+| 10 | **Matryoshka Embeddings** | Copilot | Nested dims, truncate without retraining, 8x memory | Two-tier facet search: fast 128-dim filter → precise 768-dim rerank |
+| 11 | **MoE Model Routing** | Cursor | Per-token expert routing, RL-trained | Per-stage model routing: Opus for reasoning, Sonnet for matching, rules for dates |
+| 12 | **Event-Driven Agents** | Copilot AgentHQ | Repository event → agent trigger → scoped action | Customer data event → segment update trigger → scoped recalculation |
+
+---
+
 ## Appendix A: Source Reference Table
 
 | # | Source | Type | Key Metric | Topic |
@@ -1002,6 +1412,22 @@ The same engine powering Claude Code, exposed as a Python/TypeScript library:
 | 53 | Promptfoo | Tool | YAML-based prompt testing, LLM-as-judge | Prompt evaluation |
 | 54 | Building Marketing Memory MCP | Blog | CRM + MCP integration for marketing | Marketing agents |
 | 55 | Anthropic Evals Guide | Blog | Offline + production eval framework | Agent evaluation |
+| 56 | Claude Code Master Agent Loop | Blog | Single-threaded while(tool_call) loop | Agent architecture |
+| 57 | Anthropic Building Effective Agents | Research | Augmented LLM + agent loop patterns | Agent design |
+| 58 | Anthropic Context Engineering | Blog | Compaction at 92%, structured notes | Context management |
+| 59 | Anthropic Multi-Agent Research System | Blog | 90% faster, 15x token cost | Sub-agent orchestration |
+| 60 | Anthropic Long-Running Agent Harnesses | Blog | Two-agent pattern, session persistence | Agent reliability |
+| 61 | MCP Architecture Specification | Protocol | Host→Client→Server, 3 primitives | Tool isolation |
+| 62 | Claude Agent Skills Deep Dive | Blog | Three-tier progressive disclosure | Skill architecture |
+| 63 | Agent Skills Open Standard | Article | SKILL.md packaging, adopted by OpenAI | Standardization |
+| 64 | Cursor Codebase Indexing (Engineer's Codex) | Blog | AST chunking, Merkle tree, incremental | Indexing patterns |
+| 65 | Cursor + Turbopuffer | Case study | 100B+ vectors, namespace-per-codebase | Vector storage at scale |
+| 66 | Cursor Fast Apply (Fireworks) | Blog | Two-step apply, 1000 tok/s, 13x speedup | Intent/execution split |
+| 67 | Cursor 8 Parallel Agents | Blog | Git worktree isolation, aggregated diffs | Parallel execution |
+| 68 | ByteByteGo Cursor Agent Analysis | Blog | Orchestrator loop, context rebuilding | Agent orchestration |
+| 69 | GitHub Custom Embedding Model | Article | Matryoshka MRL, 37.6% improvement, 8x memory | Embedding architecture |
+| 70 | GitHub Copilot Coding Agent | Docs | Self-healing loop, sandbox model | Error correction |
+| 71 | Copilot SDK Execution Loop | Blog | Plan-execute-assess, multi-model routing | Agent runtime |
 
 ---
 

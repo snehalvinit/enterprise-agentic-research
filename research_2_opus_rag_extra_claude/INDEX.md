@@ -21,7 +21,7 @@ Deep research and concrete upgrade plan to transform Smart-Segmentation into an 
 
 1. **Codebase Deep Dive** — Complete analysis of Smart-Segmentation: 23+ prompt files, Milvus integration, shortlist generation cascade, state management (57 variables), and all 7 pipeline stages
 2. **Ground Truth Analysis** — Analyzed 46 labeled segment definitions identifying systematic failure patterns: 54.3% Strict/non-Strict confusion, 30.4% brand exclusion errors, 41.3% naming inconsistencies
-3. **Web Research** — 125+ sources across 18 topic areas covering enterprise agent architectures, RAG alternatives, pipeline collapse patterns, multi-tenant isolation, auto-improvement, and AI coding tools for enterprise agent development
+3. **Web Research** — 140+ sources across 19 topic areas covering enterprise agent architectures, RAG alternatives, pipeline collapse patterns, multi-tenant isolation, auto-improvement, AI coding tools, and internal architecture patterns applicable to enterprise agent building
 4. **Cross-Reference** — Findings mapped against prior research context (skill systems, memory, eval-first patterns)
 5. **Proposal + Roadmap** — Concrete 20-week phased upgrade plan with code examples and transformation demonstrations
 
@@ -40,7 +40,7 @@ Open `index.html` in your browser for an elegant reading experience with:
 |---|----------|------|--------|-----------|
 | ~ | Index (this file) | [INDEX.md](INDEX.md) | Done | Navigation + overview |
 | 01 | Bottleneck Analysis | [01_bottleneck_analysis.md](01_bottleneck_analysis.md) | Done | 35+ bottlenecks across 8 dimensions with focus on retrieval, pipeline, ground truth |
-| 02 | Research Compendium | [02_research_compendium.md](02_research_compendium.md) | Done | 125+ sources across 18 topics with enterprise implementation focus |
+| 02 | Research Compendium | [02_research_compendium.md](02_research_compendium.md) | Done | 140+ sources across 19 topics with enterprise implementation focus |
 | 03 | Concrete Upgrade Proposal | [03_concrete_upgrade_proposal.md](03_concrete_upgrade_proposal.md) | Done | Full architecture + cascade retrieval + pipeline refactor + code examples |
 | 04 | Implementation Roadmap | [04_implementation_roadmap.md](04_implementation_roadmap.md) | Done | 20-week phased plan with parallel tracks |
 
@@ -93,7 +93,7 @@ Open `index.html` in your browser for an elegant reading experience with:
 - Missing Capabilities (5 issues) — no memory, no auto-improvement, limited observability
 
 ### 02 — Research Compendium
-125+ sources across 18 topic areas:
+140+ sources across 19 topic areas:
 - RAG vs no-RAG decision framework (ICLR 2025, Microsoft)
 - Structured catalog retrieval alternatives (cascade, NER, taxonomy, tools)
 - Hybrid BM25+dense retrieval (BEIR, Pinecone, SIGIR)
@@ -109,7 +109,8 @@ Open `index.html` in your browser for an elegant reading experience with:
 - Auto-improvement (DSPy GEPA, Mem0)
 - Observability (Braintrust, Databricks Mosaic)
 - Cost optimization (semantic caching, model routing, prompt caching)
-- **AI coding tools for enterprise agent development (Claude Code, GitHub Copilot, Cursor)**
+- AI coding tools for enterprise agent development (Claude Code, GitHub Copilot, Cursor)
+- **Internal architecture patterns: agent loops, context compaction, sub-agent isolation, MCP, two-step apply, parallel execution, self-healing, MoE routing**
 
 ### 03 — Concrete Upgrade Proposal
 Detailed reformation plan including:
