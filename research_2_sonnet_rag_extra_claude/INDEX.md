@@ -48,8 +48,9 @@ Four critical contextual information files (`refinements.txt`, `catalog_view_des
 | # | Document | Status | Key Content |
 |---|---|---|---|
 | INDEX | This file | ✅ Done | Overview and findings |
+| **00** | **Master Summary & Recommendations** | ✅ Done | **Start here — all 6 docs in plain English, 5 problems with real code examples, 8 prioritized recommendations, impact table, glossary** |
 | 01 | Bottleneck Analysis | ✅ Done | 18 bottlenecks, severity matrix, code references |
-| 02 | Research Compendium | ✅ Done | 20+ sources, RAG framework, enterprise patterns |
+| 02 | Research Compendium | ✅ Done | 70+ sources, RAG framework, enterprise patterns |
 | 03 | Concrete Upgrade Proposal | ✅ Done | Cascade retrieval, 4-stage pipeline, tenant manifest |
 | 04 | Implementation Roadmap | ✅ Done | 5 phases, parallel tracks, risk registry |
 | 05 | AI Coding Tools for Enterprise Agents | ✅ Done | Claude Code, GitHub Copilot, Cursor — capabilities, decision matrix, workflow patterns for marketing/CRM agents |
@@ -91,6 +92,7 @@ TARGET:  4 LLM stages, N tenants, cascade retrieval, runtime tenant config, grou
 ```
 research_2_sonnet_rag_extra_claude/
 ├── INDEX.md                                       ← This file
+├── 00_master_summary.md                           ← ⭐ START HERE — consolidated guide + recommendations
 ├── 01_bottleneck_analysis.md                      ← All 18 bottlenecks with code references
 ├── 02_research_compendium.md                      ← State-of-the-art research with citations
 ├── 03_concrete_upgrade_proposal.md                ← Detailed upgrade plan with code examples
