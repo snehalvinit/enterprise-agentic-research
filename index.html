@@ -165,6 +165,51 @@
         }
         .empty-slot strong { color: var(--muted); }
 
+        .ultimate-banner {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 1.25rem;
+            background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(99,102,241,0.12));
+            border: 1px solid rgba(245,158,11,0.4);
+            border-radius: 0.75rem;
+            padding: 1.25rem 1.75rem;
+            text-decoration: none;
+            color: inherit;
+            margin-bottom: 1.5rem;
+            transition: all 0.2s ease;
+        }
+        .ultimate-banner:hover {
+            border-color: #f59e0b;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(245,158,11,0.2);
+        }
+        .ultimate-banner .ub-icon {
+            font-size: 1.75rem;
+            color: #f59e0b;
+        }
+        .ultimate-banner .ub-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+        .ultimate-banner .ub-body strong {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .ultimate-banner .ub-body span {
+            font-size: 0.8rem;
+            color: var(--muted);
+            line-height: 1.4;
+        }
+        .ultimate-banner .ub-arrow {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #f59e0b;
+            white-space: nowrap;
+        }
+
         footer {
             margin-top: 3rem;
             text-align: center;
@@ -202,6 +247,15 @@
             <p>Parallel research initiatives for upgrading Smart-Segmentation into an enterprise-grade agentic customer segmentation system.</p>
             <span class="source-badge">source: Smart-Segmentation &nbsp;|&nbsp; github: snehalvinit</span>
         </header>
+
+        <a class="ultimate-banner" href="research_2_sonnet_rag_extra_claude/index.html#07_ultimate_cross_research_master_guide.md">
+            <span class="ub-icon">★★</span>
+            <div class="ub-body">
+                <strong>Ultimate Cross-Research Master Guide</strong>
+                <span>All 6 sessions synthesized — plain English, pros/cons, expert recommendations, enterprise platform vision, 16-week roadmap</span>
+            </div>
+            <span class="ub-arrow">&#8594; Read First</span>
+        </a>
 
         <div class="section-label">Research Attempts</div>
 
