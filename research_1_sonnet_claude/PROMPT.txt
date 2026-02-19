@@ -37,6 +37,191 @@ Evaluate it against these upgrade criteria:
       building new ones with concrete logs and memory-based evidence)
 
 
+PART A2: GROUND TRUTH DATA & FACET RETRIEVAL ANALYSIS
+--------------------------------------------------------------------------------
+The file below is the ground truth dataset used to evaluate segmentation quality.
+Analyze it carefully to understand what it contains and what it implies about
+the retrieval strategy currently in use.
+
+  File: /Users/s0m0ohl/customer_segement/ground_truth_cdi(Updated Ground Truth).csv
+  Also at: Smart-Segmentation/metadata/segment-historical-dataset/input/ground_truth_cdi.csv
+
+  Columns (14 total, ~18,779 rows):
+    Seg No, Segment Name, Updated Segment Description with Add-on,
+    expected facets, updated expected facets, Remarks on values,
+    Updated Segment Definition, Predicted CDI, Predicted E2F,
+    Segment Description, Add-On Description, Segment Definition,
+    OLD Updated Segment Description, OLD Segment Description with Add-on
+
+  Key code context:
+    - The system currently embeds 500+ facets (names + values) into Milvus
+      vector DB (BGE or MiniLM models) and retrieves them per sub-segment query.
+    - Two Milvus collections are used: one for facet names, one for facet values.
+    - Hybrid search with RRF ranker is already partially implemented in milvus.py.
+    - Facet catalog is loaded from BigQuery / pickle files (email_mobile vs cbb_id
+      keys), and restrictions are applied as a filter on top of vector search.
+    - After retrieval, a separate LLM (facet_classifier_matcher_prompt.txt) picks
+      the best refinement value for each shortlisted facet.
+    - The ground truth CSV contains expected vs. predicted facets used for evals.
+
+  Required analysis tasks (include findings in 01_bottleneck_analysis.md and
+  recommendations in 03_concrete_upgrade_proposal.md):
+
+  A. IS EMBEDDING-BASED RAG ACTUALLY THE RIGHT CHOICE FOR 500+ FACETS?
+     Analyze whether vector similarity search (Milvus + BGE/MiniLM) is the
+     optimal retrieval strategy for a structured, finite facet catalog of
+     ~500+ items. Specifically:
+       - These facets are NOT free-text KB articles — they are structured
+         catalog entries (name, description, type, l1_value list, metadata).
+         Does dense vector retrieval add noise vs. exact/structured lookup?
+       - Compare: vector search vs. BM25/keyword vs. structured SQL/filter
+         lookup vs. LLM-with-full-catalog-in-context vs. hybrid approaches.
+       - At what catalog size does each approach break down in terms of
+         precision, recall, latency, and cost?
+       - Given the facet catalog has types (numeric, date, string, csv),
+         restrictions (tenant-level), and hierarchy (parent/child), could
+         a structured query + metadata filter replace or outperform embedding
+         search entirely for most facets?
+       - When is embedding search genuinely needed (e.g., semantic synonym
+         matching, brand name inference, vague user queries)?
+
+  B. GROUND TRUTH CSV: WHAT IT REVEALS ABOUT CURRENT QUALITY & GAPS
+     Analyze the CSV data to understand:
+       - How large is the gap between expected_facets and predicted facets?
+         Where does the system fail (recall, precision, wrong values)?
+       - Are failures concentrated in specific facet types (date, numeric,
+         propensity, persona, purchase-based) or query types?
+       - What does the Remarks column reveal about systematic failure modes?
+       - Does the CDI/E2F prediction data expose any patterns?
+       - Use these findings to ground the bottleneck analysis in real data.
+
+  C. BETTER THAN PURE EMBEDDING: ALTERNATIVES AND ENHANCEMENTS
+     Research and recommend what is better than pure embedding-based retrieval
+     for this specific use case (structured facet catalog with metadata):
+       - Structured lookup first + embeddings only as fallback (cascade approach)
+       - Named entity recognition pre-pass to map query terms to exact catalog
+         entries before invoking vector search (NER is already implemented —
+         analyze if it is being used effectively)
+       - LLM-as-ranker: after shortlisting N candidates, use LLM to pick the
+         best match using full facet description (current approach partially
+         does this via facet_classifier_matcher_prompt.txt — is it optimal?)
+       - Ontology / taxonomy-aware retrieval: facets have categories and
+         hierarchies (super department, brand, propensity tier) — can a
+         structured taxonomy graph replace vector search for those dimensions?
+       - Fine-tuned embedding model on domain-specific facet pairs vs.
+         generic BGE/MiniLM — what would it take, and is it worth it?
+       - Function-calling / tool-per-facet-type: give the LLM typed tools
+         (search_propensity_facets, search_purchase_facets, search_persona_facets)
+         so it performs structured, type-aware retrieval instead of one big
+         semantic search across all 500+ facets.
+
+  D. MULTI-TENANT SCALABILITY: WHEN THE CATALOG GETS BIGGER
+     The current system supports at least two tenant types (email_mobile vs
+     cbb_id). Research what to do when:
+       - A similar tenant has a larger facet catalog (1000+, 5000+)?
+       - Tenant-specific facets must be isolated but share common base facets?
+       - New tenants need to onboard their facet catalog without re-indexing all?
+     Recommend:
+       - Partitioning strategies (already using date partitions in Milvus —
+         extend to tenant partitions)
+       - Namespace / tenant-scoped vector indexes vs. shared index with
+         metadata filter — trade-offs at scale
+       - Catalog versioning and incremental re-indexing on facet updates
+       - LLM-level quality approaches that do NOT degrade with catalog growth:
+         e.g., two-stage retrieval (coarse filter → LLM rerank), LLM-generated
+         structured queries, or dynamic few-shot selection from ground truth CSV
+
+
+PART A3: PIPELINE STAGE ANALYSIS — DO WE NEED THEM?
+--------------------------------------------------------------------------------
+The current Smart-Segmentation pipeline has these distinct LLM-call stages:
+
+  Stage 1 - Route Agent         (route_agent_prompt.txt)
+  Stage 2 - Segment Decomposer  (segment_decomposer_prompt.txt)
+  Stage 3 - Date Tagger         (date_extraction_prompt.txt)
+  Stage 4 - Facet/Value Mapper  (facet_value_operator_mapper_prompt.txt)
+  Stage 5 - Facet Classifier    (facet_classifier_matcher_prompt.txt)
+            + Linked Facet Matcher (linked_facet_matcher_prompt.txt)
+            + Ambiguity Resolver  (ambiguity_framework_prompt.txt)
+  Stage 6 - Formatter           (master_format_generator_prompt.txt /
+                                  new_segment_formatter_delegation_prompt.txt)
+  Stage 7 - Direct Segment Editor (direct_segment_editor_prompt.txt)
+
+  Also present: NER agent, summary generator, purchase facets helper,
+  facet_delete/replace/value_add/value_delete/value_replace prompts.
+
+  Required analysis and research (include in both 01_bottleneck_analysis.md
+  and 03_concrete_upgrade_proposal.md):
+
+  A. IS THIS STAGE DECOMPOSITION THE RIGHT ARCHITECTURE?
+     Research and analyze:
+       - What is the cost (latency, LLM API calls, error propagation) of
+         this many-stage pipeline vs. a single capable LLM call?
+       - Can a modern long-context reasoning model (Claude Opus, GPT-4o,
+         Gemini 1.5 Pro) collapse stages 2–5 into a single structured
+         output call with the right prompt + tool definitions?
+       - Which stages are genuinely necessary as separate LLM calls because
+         the task requires different context or reasoning?
+       - Which stages could be deterministic code (no LLM needed) — e.g.,
+         date parsing (Stage 3 uses date_tagger_patterns.json, could be pure
+         regex/rule-based), format conversion (Stage 6 is pure JSON mapping)?
+       - What is the error accumulation risk of a 7-stage chain vs. a
+         2-3 stage design?
+
+  B. LLM GENERATE INSTRUCTIONS ON THE FLY vs. STATIC STAGED PROMPTS
+     Research the trade-off between:
+       - Current approach: many static, specialized prompts for each stage,
+         each with hardcoded logic and examples (brittle, hard to update)
+       - Alternative A: Single agent with a KB article / skill per operation
+         type (decompose, date-extract, map-facets, format) loaded dynamically
+         via RAG — LLM selects which skill to apply on the fly
+       - Alternative B: LLM generates its own execution plan (planning agent)
+         and calls typed tools (search_facets, tag_dates, format_output) in
+         the order it determines is correct for the specific query
+       - Alternative C: Hybrid — static system prompt defines the contract
+         (input/output schema, grounding rules), LLM picks tools dynamically
+         within that contract (most aligned with Part D Section 3 above)
+     For each alternative research: quality benchmarks, failure modes,
+     observability, and ease of updating business logic without prompt surgery.
+
+  C. STATIC PROMPT + KB ARTICLE AGENT PATTERN
+     Analyze whether the current pipeline could be refactored as:
+       - One static core agent (identity, loop, grounding rules, output schema)
+       - KB articles for each "skill" (how to decompose a segment, how to
+         handle dates, how to pick facets, how to format output)
+       - Ground truth CSV rows as few-shot examples retrieved dynamically
+         (RAG over ground truth — retrieve similar past segment definitions
+         as few-shot context rather than hardcoding examples in every prompt)
+     Research evidence for and against this pattern from enterprise agent
+     implementations. Does it improve maintainability and quality?
+
+  D. DELIBERATE CODE-LEVEL RESEARCH TARGETS
+     While analyzing the code, specifically investigate and research:
+       - agentic_framework/utils/milvus.py: hybrid search with RRFRanker is
+         implemented but may not be the default path — research whether hybrid
+         BM25+dense consistently outperforms single-index dense search for
+         short structured queries like facet names
+       - agentic_framework/utils/embedding.py: BGE vs MiniLM selection at
+         runtime — research which is better for short domain-specific queries
+         (facet names are typically 2-6 words); is a domain-adapted model
+         worth the investment?
+       - agentic_framework/sub_agents/new_segment_creation/tools/
+         shortlist_generation.py: analyze the cascaded search logic
+         (name search → value search → purchase facets path → date facets
+         path) — is this the right cascade order? What are the failure modes?
+       - agentic_framework/contextual_information/: catalog_view_description.txt,
+         contextual_information_on_refinements.txt — these are injected as
+         static context into prompts. Research if dynamic retrieval of only
+         the relevant contextual info would be better
+       - agentic_framework/prompts/date_extraction_prompt.txt +
+         date_tagger_patterns.json: is a full LLM stage needed for date
+         extraction, or could a rule-based + lightweight NLP approach
+         (dateparser, spaCy) handle 95% of cases?
+       - The ground truth CSV is only used for eval — research whether it
+         should be actively used at runtime as few-shot context (RAG over
+         historical segment definitions)
+
+
 PART B: DEEP RESEARCH
 --------------------------------------------------------------------------------
 Conduct thorough research on the latest approaches for building enterprise-level
@@ -59,6 +244,15 @@ Research topics:
   - Agentic memory systems (short-term, long-term, structured)
   - Plugin/skill architectures for agents
   - RAG best practices for enterprise knowledge management
+  - RAG vs. no-RAG decision framework: when is embedding-based RAG actually needed
+    vs. fine-tuning, long-context prompting, or structured DB lookups
+  - Optimal chunk sizing and article sizing strategies for KB (knowledge base)
+    articles in RAG pipelines (semantic chunking, fixed-size, hierarchical, etc.)
+  - When to use RAG: signal criteria (corpus size, update frequency, latency
+    budget, factual grounding requirements, hallucination risk)
+  - RAG quality improvement at scale: techniques to maintain/improve retrieval
+    quality as the knowledge base grows larger (re-ranking, hybrid search,
+    metadata filtering, query rewriting, HyDE, FLARE, self-RAG, corrective-RAG)
   - Multi-tenant agent systems
   - Auto-improving agents (prompt optimization, feedback loops)
   - Structured output and validation patterns
@@ -66,6 +260,48 @@ Research topics:
   - Cost optimization without sacrificing quality
   - Observability, tracing, and debugging for agents
   - Plan-Act-Verify-Improve loops
+  - Structured facet catalog retrieval: alternatives to dense vector search
+    for finite, typed, metadata-rich knowledge bases
+  - Two-stage and cascade retrieval: coarse filter + LLM rerank patterns
+  - Ground-truth-as-few-shot: using historical labeled examples as dynamic
+    RAG context to improve LLM output quality
+  - Many-stage LLM pipeline collapse: when to merge stages vs. keep them
+    separate, error accumulation in multi-step agentic chains
+  - Typed tool / function-calling patterns for domain-specific retrieval
+    (type-aware tools vs. one general semantic search)
+
+TARGETED WEB RESEARCH KEYWORDS
+  Search these specific subject areas explicitly during research. Each area
+  should produce findings grounded in real implementations, papers, and blogs.
+
+  Domain-specific enterprise agent research keywords:
+    1. "enterprise marketing segmentation agent LLM 2024 2025"
+    2. "enterprise CRM agent AI customer segmentation automation"
+    3. "campaign agent architecture LLM marketing automation enterprise"
+    4. "agentic CRM messaging personalization at scale AI"
+    5. "customer data platform CDP AI agent integration architecture"
+    6. "marketing campaign orchestration LLM agent enterprise"
+    7. "audience segmentation AI agent structured output enterprise"
+    8. "real-time customer segmentation LLM pipeline scalability"
+    9. "enterprise AI agent facet retrieval structured catalog"
+    10. "LLM-powered CRM segmentation Salesforce Adobe Walmart enterprise"
+    11. "multi-tenant AI agent isolation tenant-specific knowledge retrieval"
+    12. "enterprise agent pipeline stage collapse single LLM call quality"
+    13. "RAG structured catalog finite knowledge base alternatives to embeddings"
+    14. "hybrid BM25 dense retrieval short queries domain-specific benchmarks"
+    15. "function calling typed tools LLM structured retrieval enterprise"
+    16. "few-shot RAG ground truth historical examples dynamic context"
+    17. "LLM reranker cross-encoder structured facet selection enterprise"
+    18. "agentic segmentation campaign Salesforce Marketing Cloud AI"
+    19. "Adobe Real-Time CDP AI segmentation agent architecture"
+    20. "customer segmentation LLM Walmart Target Kroger retail enterprise"
+
+  For each keyword area, find:
+    - Concrete implementations or case studies (not just theory)
+    - Architecture decisions made and why
+    - Failure modes discovered and how they were addressed
+    - Metrics: latency, accuracy, cost, scale
+    - Open-source tools, frameworks, or repos if available
 
 
 PART C: DELIVERABLE DOCUMENTS
@@ -84,6 +320,18 @@ Required documents:
     approach and code.
   - Cover: architecture issues, prompt design flaws, eval gaps, scalability
     limits, reliability problems, missing capabilities.
+  - Dedicated section: "Facet Retrieval Bottlenecks" — analyze the Milvus
+    embedding search for 500+ facets; identify where precision/recall fails
+    using evidence from ground_truth_cdi(Updated Ground Truth).csv.
+  - Dedicated section: "Pipeline Stage Overengineering or Gaps" — for each
+    of the 7 pipeline stages (Route → Decompose → Date → Map → Classify →
+    Format → Edit), identify whether the stage is necessary, over-engineered,
+    or missing a verification step. Flag which stages accumulate errors.
+  - Dedicated section: "Ground Truth Data Gap Analysis" — what do the
+    expected vs. predicted facets reveal about systematic failure patterns?
+    Which facet types (propensity, persona, purchase, date, numeric) fail most?
+  - Dedicated section: "Multi-Tenant Scalability Risks" — what breaks first
+    when catalog size doubles or a new tenant is onboarded?
 
   DOCUMENT 2: RESEARCH COMPENDIUM
   File: 02_research_compendium.md
@@ -109,6 +357,23 @@ Required documents:
   - Identify bottlenecks at each level and propose solutions.
   - State-of-the-art approaches weighted against cost-based alternatives.
   - Cost-saving options justified in appendix; core quality must be best-in-class.
+  - Dedicated section: "Facet Retrieval Upgrade" — concrete recommendation on
+    whether to keep embedding search, replace it, augment it, or cascade it.
+    Include decision matrix: embedding vs. structured lookup vs. hybrid vs.
+    type-aware tools. Concrete before/after architecture diagram (ASCII or
+    described precisely). Show how this scales to larger tenant catalogs.
+  - Dedicated section: "Pipeline Stage Refactor" — propose the right number
+    of stages. Show which stages merge, which stay separate, which become
+    code (no LLM). Propose the static-prompt + dynamic-skill KB article
+    pattern as a concrete alternative. Include example skill bundles for
+    decompose, date-tag, map-facets, and format operations.
+  - Dedicated section: "Ground Truth as Runtime Few-Shot RAG" — concrete
+    proposal for using ground_truth_cdi CSV rows as dynamically retrieved
+    few-shot examples at inference time (similarity search over historical
+    segment definitions to find closest examples, inject as context).
+  - Dedicated section: "Enterprise Domain Patterns" — what leading enterprise
+    marketing/CRM/campaign AI agents do that this system should adopt
+    (grounded in findings from targeted web research keyword areas).
 
   DOCUMENT 4: IMPLEMENTATION ROADMAP
   File: 04_implementation_roadmap.md
@@ -231,7 +496,66 @@ research. Use these as a starting point and expand upon them.
      - Escalation: ask clarifying questions when missing required inputs
    Everything else (skills, knowledge, tenant policies, tools) loads dynamically.
 
-9. KNOWN PROBLEMS TO SOLVE
+9. RAG DECISION FRAMEWORK: WHEN AND HOW TO USE IT
+
+   A. Do you actually need embedding-based RAG?
+      Analyze and research each alternative before defaulting to RAG:
+        - Fine-tuning: better when knowledge is static and patterns matter more
+          than facts; not ideal for rapidly-changing KB articles
+        - Long-context prompting (stuffing): viable when corpus is small (<100K
+          tokens); evaluate cost vs. retrieval accuracy trade-off
+        - Structured DB / SQL lookup: better for tabular, structured, or highly
+          filterable data (customer records, product catalog, pricing tables)
+        - Keyword / BM25 search: often underrated; combine with dense retrieval
+          (hybrid search) for best results at lower cost
+        - RAG is optimal when: corpus is large (>500 KB articles or frequently
+          updated), answers require precise factual grounding, hallucination risk
+          is high, and low latency is not a hard constraint
+
+   B. Optimal chunk/article sizing for KB articles in RAG
+      Research and provide concrete recommendations for:
+        - Fixed-size chunking (token count): typical sweet spots (256, 512, 1024
+          tokens) and when each applies
+        - Semantic / paragraph-level chunking: when structure-aware splitting
+          outperforms naive fixed-size splitting
+        - Hierarchical chunking: large parent chunk for context + small child
+          chunk for retrieval precision (parent-child retrieval pattern)
+        - KB-article-level granularity: when to keep an entire article as one
+          chunk vs. splitting; metadata tagging strategy per chunk
+        - Overlap strategies: how much overlap between chunks prevents context
+          loss at boundaries
+        - Optimal embedding model selection relative to chunk size
+
+   C. When to use RAG - decision criteria
+      Provide a clear decision tree or rubric covering:
+        - Corpus size threshold (how many articles/documents justify RAG?)
+        - Update frequency (how often does knowledge change?)
+        - Hallucination risk tolerance (safety-critical vs. low-stakes)
+        - Latency budget (RAG adds retrieval latency; when is it acceptable?)
+        - Query type fit (open-ended factual, procedural, comparative, etc.)
+        - Cost model (embedding + retrieval + LLM vs. larger context window)
+
+   D. Improving RAG quality as KB grows larger
+      Research and document techniques to maintain and improve quality at scale:
+        - Re-ranking: cross-encoder re-rankers (Cohere, BGE, etc.) applied post-
+          retrieval to re-score top-K candidates
+        - Hybrid search: BM25 + dense vector combined scoring (RRF fusion)
+        - Query rewriting and expansion: HyDE (Hypothetical Document Embeddings),
+          multi-query expansion, step-back prompting
+        - Self-RAG and Corrective-RAG (CRAG): agent decides when to retrieve,
+          verifies retrieved content quality, and retries if needed
+        - FLARE (Forward-Looking Active Retrieval): retrieve proactively during
+          generation when model confidence drops
+        - Metadata filtering: tenant, domain, freshness, version filters to
+          narrow the retrieval space before vector search
+        - Knowledge graph augmentation: entity-linking + graph traversal for
+          multi-hop reasoning on large KB
+        - Eval-driven RAG tuning: measure retrieval recall, MRR, RAGAS metrics;
+          use automated evals to detect quality degradation as KB grows
+        - Indexing hygiene: deduplication, staleness detection, re-embedding
+          triggers when articles are updated
+
+10. KNOWN PROBLEMS TO SOLVE
    - Stop paraphrase-based prompt mutation
      -> Replace with skill selection + skill injection (versioned)
    - Make segment outputs strictly typed
