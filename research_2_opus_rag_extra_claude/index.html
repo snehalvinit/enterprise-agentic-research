@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research 2: Opus RAG Extra — Enterprise Agentic Customer Segmentation</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --primary: #10b981;
+            --primary-dark: #059669;
+            --primary-glow: rgba(16, 185, 129, 0.15);
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.12);
+            --bg: #0f172a;
+            --bg-surface: #1e293b;
+            --bg-card: #1e293b;
+            --bg-card-hover: #263548;
+            --bg-content: #ffffff;
+            --sidebar-bg: #0c1222;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+            --border: #334155;
+            --border-light: #475569;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border);
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sidebar-header .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-decoration: none;
+            margin-bottom: 0.75rem;
+            transition: color 0.2s;
+        }
+        .sidebar-header .back-link:hover { color: var(--primary); }
+
+        .sidebar-header h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #34d399, #10b981, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.3;
+        }
+
+        .sidebar-header .research-id {
+            font-size: 0.7rem;
+            font-family: 'SF Mono', 'Monaco', monospace;
+            color: var(--text-dim);
+            background: var(--bg-surface);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            display: inline-block;
+            margin-top: 0.5rem;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+        }
+
+        .nav-group { margin-bottom: 1.25rem; }
+
+        .nav-group-label {
+            font-size: 0.625rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-dim);
+            padding: 0 0.75rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.625rem;
+            padding: 0.625rem 0.75rem;
+            border-radius: 0.5rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-size: 0.85rem;
+            position: relative;
+        }
+
+        .nav-item:hover {
+            background: var(--primary-glow);
+            color: var(--text);
+        }
+
+        .nav-item.active {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(99, 102, 241, 0.15));
+            color: #ffffff;
+            font-weight: 500;
+        }
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0.375rem;
+            bottom: 0.375rem;
+            width: 3px;
+            background: var(--primary);
+            border-radius: 0 2px 2px 0;
+        }
+
+        .nav-item .num {
+            font-size: 0.625rem;
+            font-weight: 700;
+            background: var(--border);
+            color: var(--text-muted);
+            width: 1.375rem;
+            height: 1.375rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.25rem;
+            flex-shrink: 0;
+        }
+        .nav-item.active .num {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .nav-item .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+        .status-dot.ready { background: var(--primary); box-shadow: 0 0 6px var(--primary); }
+        .status-dot.pending { background: var(--text-dim); }
+
+        .sidebar-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+
+        /* Main Content */
+        .main {
+            margin-left: 300px;
+            flex: 1;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .breadcrumb-bar {
+            padding: 0.75rem 2rem;
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(12px);
+        }
+
+        .breadcrumb-bar a {
+            color: var(--text-dim);
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+        .breadcrumb-bar a:hover { color: var(--primary); }
+        .breadcrumb-bar .sep { color: var(--border-light); font-size: 0.7rem; }
+        .breadcrumb-bar .current { color: var(--text); font-weight: 500; }
+
+        .content-area {
+            flex: 1;
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .doc-header {
+            max-width: 900px;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+        .doc-header h2 { font-size: 1.5rem; font-weight: 700; color: var(--text); }
+        .doc-header .file-badge {
+            font-size: 0.7rem;
+            font-family: monospace;
+            background: var(--bg-surface);
+            color: var(--text-dim);
+            padding: 0.25rem 0.625rem;
+            border-radius: 0.25rem;
+            border: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        /* Markdown Body */
+        .markdown-body {
+            max-width: 900px;
+            background: var(--bg-content);
+            color: #1e293b;
+            padding: 2.5rem 3rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+            font-size: 1rem;
+            line-height: 1.8;
+            border: 1px solid var(--border);
+        }
+
+        .markdown-body h1 { font-size: 1.85rem; color: #0f172a; border-bottom: 2px solid var(--primary); padding-bottom: 0.75rem; margin: 2rem 0 1.25rem; }
+        .markdown-body h2 { font-size: 1.4rem; color: #1e293b; margin: 2.25rem 0 0.875rem; padding-bottom: 0.4rem; border-bottom: 1px solid #e2e8f0; }
+        .markdown-body h3 { font-size: 1.15rem; color: #334155; margin: 1.75rem 0 0.625rem; }
+        .markdown-body h4 { font-size: 1.05rem; color: #475569; margin: 1.25rem 0 0.5rem; }
+        .markdown-body p { margin-bottom: 1.125rem; color: #374151; }
+        .markdown-body ul, .markdown-body ol { margin-bottom: 1.125rem; padding-left: 1.75rem; }
+        .markdown-body li { margin-bottom: 0.4rem; color: #374151; }
+
+        .markdown-body pre { background: #0f172a; border-radius: 0.625rem; overflow-x: auto; padding: 1.25rem; margin: 1.25rem 0; border: 1px solid #334155; }
+        .markdown-body pre code { background: transparent; color: #e2e8f0; font-size: 0.875rem; line-height: 1.6; }
+        .markdown-body code { font-family: 'SF Mono','Monaco','Fira Code', monospace; background: #f1f5f9; color: #7c3aed; padding: 0.15rem 0.375rem; border-radius: 0.2rem; font-size: 0.85em; }
+        .markdown-body blockquote { border-left: 4px solid var(--primary); background: #f0fdf4; padding: 0.875rem 1.25rem; margin: 1.25rem 0; border-radius: 0 0.4rem 0.4rem 0; color: #374151; }
+        .markdown-body blockquote p { margin-bottom: 0.4rem; }
+        .markdown-body strong { color: #0f172a; font-weight: 600; }
+        .markdown-body a { color: var(--primary-dark); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s; }
+        .markdown-body a:hover { border-bottom-color: var(--primary-dark); }
+
+        .markdown-body table { width: 100%; border-collapse: collapse; margin: 1.25rem 0; font-size: 0.925rem; border: 2px solid #cbd5e1; border-radius: 0.5rem; overflow: hidden; }
+        .markdown-body th { padding: 0.75rem 1rem; text-align: left; background: #0f172a; color: #fff; font-weight: 600; border: 1px solid #334155; }
+        .markdown-body td { padding: 0.625rem 1rem; text-align: left; border: 1px solid #e2e8f0; color: #1e293b; background: #fff; }
+        .markdown-body tr:nth-child(even) td { background: #f8fafc; }
+        .markdown-body tr:hover td { background: #ecfdf5; }
+        .markdown-body hr { border: none; height: 2px; background: linear-gradient(90deg, var(--primary), var(--accent)); margin: 2rem 0; border-radius: 1px; }
+
+        /* Welcome / Home */
+        .welcome { max-width: 960px; padding: 2rem 0; }
+        .welcome h2 { font-size: 2rem; font-weight: 700; background: linear-gradient(135deg, #34d399, #6366f1); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 0.5rem; }
+        .welcome .tagline { color: var(--text-muted); font-size: 1.05rem; margin-bottom: 2rem; line-height: 1.6; }
+
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--primary), var(--accent)); opacity: 0; transition: opacity 0.2s; }
+        .card:hover { background: var(--bg-card-hover); border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+        .card:hover::before { opacity: 1; }
+
+        .card .card-num { font-size: 0.65rem; font-weight: 700; color: var(--primary); background: var(--primary-glow); padding: 0.2rem 0.5rem; border-radius: 0.2rem; display: inline-block; margin-bottom: 0.625rem; font-family: monospace; }
+        .card h3 { font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: 0.375rem; }
+        .card p { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+        .card .card-status { margin-top: 0.75rem; font-size: 0.7rem; font-weight: 500; }
+        .card .card-status.done { color: var(--primary); }
+        .card .card-status.pending { color: var(--text-dim); }
+
+        .loading { display: flex; justify-content: center; align-items: center; height: 200px; }
+        .loading::after { content: ''; width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state { text-align: center; padding: 4rem 2rem; color: var(--text-dim); }
+        .empty-state h3 { font-size: 1.25rem; margin-bottom: 0.5rem; color: var(--text-muted); }
+        .empty-state p { font-size: 0.9rem; }
+
+        .theme-toggle { position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 200; background: var(--bg-surface); border: 1px solid var(--border); color: var(--text-muted); width: 2.5rem; height: 2.5rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 1.1rem; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+        .theme-toggle:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+        body.light {
+            --bg: #f8fafc; --bg-surface: #ffffff; --bg-card: #ffffff; --bg-card-hover: #f0fdf4;
+            --sidebar-bg: #0f172a; --text: #1e293b; --text-muted: #475569; --text-dim: #94a3b8;
+            --border: #e2e8f0; --border-light: #cbd5e1;
+        }
+        body.light .breadcrumb-bar { background: rgba(255,255,255,0.85); }
+        body.light .card { box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        body.light .card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+        body.light .markdown-body { box-shadow: 0 1px 6px rgba(0,0,0,0.08); border-color: #e2e8f0; }
+
+        .mobile-toggle { display: none; position: fixed; top: 0.75rem; left: 0.75rem; z-index: 101; background: var(--primary); color: #fff; border: none; width: 2.25rem; height: 2.25rem; border-radius: 0.375rem; cursor: pointer; font-size: 1.1rem; }
+        @media (max-width: 768px) {
+            .sidebar { transform: translateX(-100%); transition: transform 0.25s ease; }
+            .sidebar.open { transform: translateX(0); }
+            .main { margin-left: 0; }
+            .mobile-toggle { display: flex; align-items: center; justify-content: center; }
+            .markdown-body { padding: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <button class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme">&#9790;</button>
+
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <a class="back-link" href="../index.html">&#8592; All Research</a>
+            <h1>Enterprise Agentic Research</h1>
+            <span class="research-id">research_2_opus_rag_extra_claude</span>
+        </div>
+
+        <div class="sidebar-nav">
+            <div class="nav-group">
+                <div class="nav-group-label">Overview</div>
+                <a class="nav-item active" data-doc="INDEX.md" onclick="loadDoc('INDEX.md', this)">
+                    <span class="num">~</span> Index &amp; Overview
+                    <span class="status-dot ready"></span>
+                </a>
+                <a class="nav-item" data-doc="PROMPT.txt" onclick="loadDoc('PROMPT.txt', this)">
+                    <span class="num">P</span> Research Prompt
+                    <span class="status-dot ready"></span>
+                </a>
+            </div>
+
+            <div class="nav-group">
+                <div class="nav-group-label">Research Documents</div>
+                <a class="nav-item" data-doc="01_bottleneck_analysis.md" onclick="loadDoc('01_bottleneck_analysis.md', this)">
+                    <span class="num">01</span> Bottleneck Analysis
+                    <span class="status-dot pending"></span>
+                </a>
+                <a class="nav-item" data-doc="02_research_compendium.md" onclick="loadDoc('02_research_compendium.md', this)">
+                    <span class="num">02</span> Research Compendium
+                    <span class="status-dot pending"></span>
+                </a>
+                <a class="nav-item" data-doc="03_concrete_upgrade_proposal.md" onclick="loadDoc('03_concrete_upgrade_proposal.md', this)">
+                    <span class="num">03</span> Upgrade Proposal
+                    <span class="status-dot pending"></span>
+                </a>
+                <a class="nav-item" data-doc="04_implementation_roadmap.md" onclick="loadDoc('04_implementation_roadmap.md', this)">
+                    <span class="num">04</span> Implementation Roadmap
+                    <span class="status-dot pending"></span>
+                </a>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            Model: Claude Opus 4.6<br>
+            Focus: RAG + Retrieval Deep Dive<br>
+            Source: Smart-Segmentation<br>
+            Attempt: #2
+        </div>
+    </nav>
+
+    <div class="main">
+        <div class="breadcrumb-bar" id="breadcrumb">
+            <a href="../index.html">Research Hub</a>
+            <span class="sep">&#9656;</span>
+            <a href="#" onclick="showWelcome(); return false;">Research 2</a>
+            <span class="sep">&#9656;</span>
+            <span class="current" id="breadcrumb-current">Home</span>
+        </div>
+
+        <div class="content-area" id="content-area">
+        </div>
+    </div>
+
+    <script>
+        const docMeta = {
+            'INDEX.md':                       { title: 'Index & Overview',       num: '~',  short: 'Index' },
+            'PROMPT.txt':                     { title: 'Research Prompt',        num: 'P',  short: 'Prompt' },
+            '01_bottleneck_analysis.md':      { title: 'Bottleneck Analysis',    num: '01', short: 'Bottlenecks' },
+            '02_research_compendium.md':      { title: 'Research Compendium',    num: '02', short: 'Research' },
+            '03_concrete_upgrade_proposal.md':{ title: 'Concrete Upgrade Proposal', num: '03', short: 'Proposal' },
+            '04_implementation_roadmap.md':   { title: 'Implementation Roadmap', num: '04', short: 'Roadmap' }
+        };
+
+        const cards = [
+            { file: '01_bottleneck_analysis.md', num: '01', title: 'Bottleneck Analysis',
+              desc: 'Deep analysis of current Smart-Segmentation bottlenecks — facet retrieval failures, pipeline stage issues, ground truth gaps, and multi-tenant risks.' },
+            { file: '02_research_compendium.md', num: '02', title: 'Research Compendium',
+              desc: 'Comprehensive research on RAG alternatives, structured retrieval, enterprise agent patterns, pipeline collapse strategies, and multi-tenant architectures.' },
+            { file: '03_concrete_upgrade_proposal.md', num: '03', title: 'Concrete Upgrade Proposal',
+              desc: 'Detailed upgrade plan — facet retrieval overhaul, pipeline refactor, ground truth as few-shot RAG, enterprise domain patterns with cost analysis.' },
+            { file: '04_implementation_roadmap.md', num: '04', title: 'Implementation Roadmap',
+              desc: 'Prioritized step-by-step plan with parallel tracks, dependencies, risks, and hypothesis-driven reasoning.' }
+        ];
+
+        async function loadDoc(filename, clickedEl) {
+            const area = document.getElementById('content-area');
+            history.pushState(null, '', '#' + filename);
+            updateNav(filename, clickedEl);
+            updateBreadcrumb(filename);
+            area.innerHTML = '<div class="loading"></div>';
+
+            try {
+                const res = await fetch(filename);
+                if (!res.ok) throw new Error('File not found — research may not have run yet.');
+                const text = await res.text();
+
+                const isMarkdown = filename.endsWith('.md');
+                const html = isMarkdown ? marked.parse(text) : '<pre style="white-space:pre-wrap;color:#374151;font-size:0.875rem;line-height:1.7;">' + escapeHtml(text) + '</pre>';
+                const meta = docMeta[filename] || { title: filename, num: '?' };
+
+                area.innerHTML = `
+                    <div class="doc-header">
+                        <h2>${meta.title}</h2>
+                        <span class="file-badge">${filename}</span>
+                    </div>
+                    <div class="markdown-body">${html}</div>
+                `;
+
+                const dot = document.querySelector(`[data-doc="${filename}"] .status-dot`);
+                if (dot) { dot.classList.remove('pending'); dot.classList.add('ready'); }
+            } catch (err) {
+                area.innerHTML = `
+                    <div class="empty-state">
+                        <h3>Document Not Available Yet</h3>
+                        <p>${filename} — ${err.message}</p>
+                        <p style="margin-top:1rem;font-size:0.8rem;">Run the research to generate this document.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function updateNav(filename, clickedEl) {
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            if (clickedEl) { clickedEl.classList.add('active'); }
+            else {
+                const el = document.querySelector(`[data-doc="${filename}"]`);
+                if (el) el.classList.add('active');
+            }
+        }
+
+        function updateBreadcrumb(filename) {
+            const meta = docMeta[filename] || { short: filename };
+            document.getElementById('breadcrumb-current').textContent = meta.short || meta.title;
+        }
+
+        function showWelcome() {
+            history.pushState(null, '', window.location.pathname);
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById('breadcrumb-current').textContent = 'Home';
+
+            const cardsHtml = cards.map(c => `
+                <div class="card" onclick="loadDoc('${c.file}', document.querySelector('[data-doc=\\'${c.file}\\']'))">
+                    <span class="card-num">DOC ${c.num}</span>
+                    <h3>${c.title}</h3>
+                    <p>${c.desc}</p>
+                </div>
+            `).join('');
+
+            document.getElementById('content-area').innerHTML = `
+                <div class="welcome">
+                    <h2>Research #2 — Opus RAG Extra</h2>
+                    <p class="tagline">
+                        Deep-dive enterprise research with Claude Opus 4.6 — focused on RAG alternatives for structured facet catalogs,
+                        pipeline stage optimization, ground truth as runtime few-shot context, and multi-tenant onboarding architecture.
+                    </p>
+                    <div class="card-grid">
+                        <div class="card" onclick="loadDoc('INDEX.md', document.querySelector('[data-doc=\\'INDEX.md\\']'))">
+                            <span class="card-num">INDEX</span>
+                            <h3>Research Overview</h3>
+                            <p>Methodology, scope, and links to all deliverable documents.</p>
+                        </div>
+                        <div class="card" onclick="loadDoc('PROMPT.txt', document.querySelector('[data-doc=\\'PROMPT.txt\\']'))">
+                            <span class="card-num">PROMPT</span>
+                            <h3>Research Prompt</h3>
+                            <p>The organized, structured prompt driving this research attempt.</p>
+                        </div>
+                        ${cardsHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleTheme() {
+            document.body.classList.toggle('light');
+            localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+            document.querySelector('.theme-toggle').textContent = document.body.classList.contains('light') ? '\u2600' : '\u263E';
+        }
+
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (localStorage.getItem('theme') === 'light') {
+                document.body.classList.add('light');
+                document.querySelector('.theme-toggle').textContent = '\u2600';
+            }
+
+            document.getElementById('content-area').addEventListener('click', (e) => {
+                const a = e.target.closest('a');
+                if (a) {
+                    const href = a.getAttribute('href');
+                    if (href && (href.endsWith('.md') || href.endsWith('.txt')) && !href.startsWith('http')) {
+                        e.preventDefault();
+                        window.location.hash = href;
+                    }
+                }
+            });
+
+            const hash = window.location.hash.slice(1);
+            if (hash && (docMeta[hash] || hash.endsWith('.md') || hash.endsWith('.txt'))) {
+                loadDoc(hash, null);
+            } else {
+                showWelcome();
+            }
+        });
+
+        window.addEventListener('hashchange', () => {
+            const hash = window.location.hash.slice(1);
+            if (hash && (docMeta[hash] || hash.endsWith('.md') || hash.endsWith('.txt'))) {
+                loadDoc(hash, null);
+            } else {
+                showWelcome();
+            }
+        });
+
+        (async function checkDocs() {
+            for (const [file] of Object.entries(docMeta)) {
+                try {
+                    const res = await fetch(file, { method: 'HEAD' });
+                    if (res.ok) {
+                        const dot = document.querySelector(`[data-doc="${file}"] .status-dot`);
+                        if (dot) { dot.classList.remove('pending'); dot.classList.add('ready'); }
+                    }
+                } catch(e) {}
+            }
+        })();
+    </script>
+</body>
+</html>
