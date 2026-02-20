@@ -526,6 +526,10 @@
                     <span class="num">05</span> Integration Guide
                     <span class="status-dot ready"></span>
                 </a>
+                <a class="nav-item" data-doc="06_facet_catalog_architecture.md" onclick="loadDoc('06_facet_catalog_architecture.md', this)">
+                    <span class="num">06</span> Facet Catalog Architecture
+                    <span class="status-dot ready"></span>
+                </a>
             </div>
         </div>
 
@@ -558,7 +562,8 @@
             '02_research_compendium.md':      { title: 'Research Compendium',    num: '02', short: 'Research' },
             '03_concrete_upgrade_proposal.md':{ title: 'Concrete Upgrade Proposal', num: '03', short: 'Proposal' },
             '04_implementation_roadmap.md':   { title: 'Implementation Roadmap', num: '04', short: 'Roadmap' },
-            '05_integration_stitched.md':     { title: 'Integration Guide: Skills + Memory + Self-Improvement', num: '05', short: 'Integration' }
+            '05_integration_stitched.md':     { title: 'Integration Guide: Skills + Memory + Self-Improvement', num: '05', short: 'Integration' },
+            '06_facet_catalog_architecture.md': { title: 'Facet Catalog Architecture: Milvus vs Context, 2-Call Pipeline, RAG Quality', num: '06', short: 'Facet Catalog' }
         };
 
         const cards = [
@@ -571,7 +576,9 @@
             { file: '04_implementation_roadmap.md',    num: '04', title: 'Implementation Roadmap',
               desc: 'Prioritized step-by-step plan with parallel tracks, dependencies, risks, and reasoning.' },
             { file: '05_integration_stitched.md',     num: '05', title: 'Integration Guide',
-              desc: 'How skills snap into static prompts, how memory flows through a request, and how a production failure becomes an improved skill — all stitched together with concrete examples.' }
+              desc: 'How skills snap into static prompts, how memory flows through a request, and how a production failure becomes an improved skill — all stitched together with concrete examples.' },
+            { file: '06_facet_catalog_architecture.md', num: '06', title: 'Facet Catalog Architecture',
+              desc: 'Should you keep Milvus or use context windows with thinking models? Full analysis of the 458-facet catalog, 2-call pipeline collapse (6 → 2 LLM calls), multi-tenant support, and 4-phase RAG quality improvement stack.' }
         ];
 
         // ─── Load document ───
