@@ -29,6 +29,7 @@ This document answers those questions with concrete assembled examples, end-to-e
 4. [The Full Request Flow — One Request, All Systems](#4-the-full-request-flow--one-request-all-systems)
 5. [The Self-Improvement Loop — Failure to Better Prompt](#5-the-self-improvement-loop--failure-to-better-prompt)
 6. [The Three Integration Contracts (Summary)](#6-the-three-integration-contracts-summary)
+7. [State Machine + Skill Architecture — Loose Skills, Definite State](#7-state-machine--skill-architecture--loose-skills-definite-state)
 
 ---
 
@@ -1304,6 +1305,554 @@ When all three integrations are working, they form a compounding flywheel:
 
 ---
 
+## 7. State Machine + Skill Architecture — Loose Skills, Definite State
+
+The previous sections show skills as dynamically loaded and loosely coupled. But the system also has strict, typed, FSM-governed state (from the 1.2 solution architecture). These look like contradictions — how can skills be swappable and versioned while state is rigid and pre-validated?
+
+The answer is a single architectural principle: **skills are stateless; state owns everything**.
+
+```
+SKILL                                    STATE (SessionContainer)
+─────────────────────────────────────    ────────────────────────────────────────
+• Loaded dynamically per intent          • Created once per session; never reused
+• Versioned independently                • Typed via Pydantic (SegmentationSessionState)
+• Swappable without code changes         • FSM governs valid phase transitions
+• Contains: instructions, schema,        • Checkpointed to PostgreSQL after each step
+  constraints, model tier                • Pre-conditions validated before each skill
+• Returns: structured output ONLY        • Skills READ from state; pipeline WRITES back
+• Has no direct state access             • State changes only through pipeline layer
+```
+
+A skill never touches `SessionContainer` directly. It receives a typed input extracted from state, produces a typed output, and the **pipeline layer** — not the skill — writes that output back to state, advances the FSM, and saves the checkpoint. This is what makes skills swappable: you can replace `segment_creation_v3` with `segment_creation_v4` without any knowledge of the state schema.
+
+---
+
+### 7.1 The Contract: What a Skill Receives and Returns
+
+Every skill operates within a strict input/output contract. The pipeline extracts a typed `SkillInput` from `SessionContainer`, passes it to the skill, then writes the typed `SkillOutput` back into state:
+
+```python
+# skills/contract.py — the fixed interface ALL skills must implement
+
+from pydantic import BaseModel
+from typing import Any, Optional
+
+class SkillInput(BaseModel):
+    """
+    What every skill receives. Extracted from SessionContainer by the pipeline.
+    Skills never touch SessionContainer directly — they only see this.
+    """
+    user_query: str                        # The verbatim original user query
+    raw_sub_segment: Optional[str]         # For mid-pipeline skills, the relevant sub-segment
+    tenant_id: str                         # Tenant context (facet restrictions, conventions)
+    user_preferences: dict                 # From long-term memory (pre-loaded)
+    similar_segments: list                 # From episodic memory (pre-loaded)
+    ambiguity_history: list               # Resolved ambiguities this session
+    prior_step_outputs: dict               # Outputs from upstream steps (typed, validated)
+    fsm_phase: str                         # Current FSM phase (for context only — skill can't change it)
+
+class SkillOutput(BaseModel):
+    """
+    What every skill returns. The pipeline writes this into SessionContainer.
+    If validation fails, the pipeline retries — not the skill.
+    """
+    primary_output: Any                    # Step-specific result (sub_segment, date_metadata, etc.)
+    clarification_questions: list[str]     # If empty, pipeline proceeds; if non-empty, pauses for user
+    confidence_score: float                # 0.0–1.0; below threshold triggers retry
+    audit_trail: list[dict]               # [RETRIEVED] / [INFERRED] entries for grounding check
+    reasoning: Optional[str] = None       # CoT scratchpad; stored in trace but not shown to user
+```
+
+```python
+# The pipeline layer — extracts input, calls skill, writes back to state
+
+async def execute_skill(
+    skill: Skill,
+    container: SessionContainer,
+    step_name: str,
+    state_requirements: list["StateRequirement"],
+    checkpoints: "CheckpointRepository",
+) -> SkillOutput:
+    """
+    The only function that bridges skills ↔ state.
+    Skills never call this themselves — the pipeline calls it for them.
+    """
+
+    # ── GATE 1: State pre-conditions (from Pattern 5 in 1.2) ─────────────
+    # Validates that all upstream state required by this skill is present
+    # and correct BEFORE spending any tokens on an LLM call.
+    StateValidator.validate(container.state, state_requirements)
+
+    # ── GATE 2: FSM phase check (from Pattern 2 in 1.2) ──────────────────
+    # Each skill maps to a valid set of FSM phases.
+    # Attempting a skill from an invalid phase raises InvalidTransitionError.
+    container.fsm.transition(
+        SKILL_TO_FSM_PHASE[skill.skill_id],
+        reason=f"starting {skill.skill_id} v{skill.version}"
+    )
+
+    # ── EXTRACT: Build SkillInput from state (skill never sees raw state) ─
+    skill_input = _extract_skill_input(container, step_name)
+
+    # ── CALL: The actual LLM call — entirely inside the skill's logic ──────
+    raw_output = await skill.execute(skill_input)          # skill is stateless here
+    skill_output = SkillOutput.model_validate(raw_output)  # parse and validate
+
+    # ── WRITE-BACK: Pipeline writes output into state (skill doesn't) ─────
+    _write_skill_output_to_state(container.state, skill_output, step_name)
+
+    # ── CHECKPOINT: Save state to PostgreSQL after each successful step ────
+    # (from Pattern 4 in 1.2) — enables resume-from-checkpoint on failure
+    await checkpoints.save(container, step_name=f"{skill.skill_id}_complete")
+
+    return skill_output
+
+
+def _extract_skill_input(container: SessionContainer, step_name: str) -> SkillInput:
+    """
+    Transforms SessionContainer fields into a SkillInput.
+    This is the ONLY read path from state to skill.
+    """
+    state = container.state
+    return SkillInput(
+        user_query=state.raw_user_query,
+        raw_sub_segment=state.nsc.sub_segment.query_representation if state.nsc.sub_segment else None,
+        tenant_id=state.user.user_type,      # used to look up tenant config
+        user_preferences=container.memory_snapshot.user_preferences.dict() if container.memory_snapshot else {},
+        similar_segments=[s.dict() for s in (container.memory_snapshot.similar_segments or [])],
+        ambiguity_history=[a.dict() for a in (container.memory_snapshot.ambiguity_history or [])],
+        prior_step_outputs=_collect_prior_outputs(state, step_name),
+        fsm_phase=container.fsm.phase.value,
+    )
+
+
+def _write_skill_output_to_state(
+    state: "SegmentationSessionState",
+    output: SkillOutput,
+    step_name: str,
+) -> None:
+    """
+    Writes SkillOutput fields into the correct state domain.
+    This is the ONLY write path from skill back to state.
+    The skill itself has zero write access to state.
+    """
+    if step_name == "decompose":
+        state.nsc.sub_segment = output.primary_output
+        state.nsc.conversational_history.append({"role": "assistant", "content": str(output.primary_output)})
+
+    elif step_name == "date_tag":
+        state.nsc.date_metadata = output.primary_output
+        state.nsc.clarification_question = output.clarification_questions[0] if output.clarification_questions else None
+
+    elif step_name == "facet_map":
+        state.nsc.complete_query_representation = output.primary_output
+        state.nsc.fvom_output = output.audit_trail
+
+    elif step_name == "format":
+        state.nsc.segmentr_representation = output.primary_output
+        state.nsc.segment_formatted_flag = True
+        # Only after format succeeds — both flags together, atomically
+        state.segment_created = True
+        state.segment_creation_verified = True   # DSE gate unlocks here
+```
+
+---
+
+### 7.2 FSM Controls Which Skill Can Run — Not Intent Alone
+
+The current system routes to NSC or DSE based solely on `SegmentCreatedFlag`. The new architecture adds a second gate: the FSM phase. A skill can only be dispatched if both conditions are true:
+
+1. The **intent classifier** identifies the right skill
+2. The **FSM** is in a phase that permits that skill to start
+
+```python
+# routing/skill_dispatcher.py — combines intent + FSM to dispatch safely
+
+# Maps each skill to the FSM phases from which it is allowed to start
+SKILL_PHASE_PRECONDITIONS: dict[str, set[SessionPhase]] = {
+    "segment_creation":     {SessionPhase.IDLE, SessionPhase.ROUTING,
+                             SessionPhase.ROLLED_BACK},
+    "segment_decompose":    {SessionPhase.ROUTING, SessionPhase.NSC_CONFIRMING},
+    "date_tagging":         {SessionPhase.NSC_DECOMPOSING},        # strictly after decompose
+    "facet_mapping":        {SessionPhase.NSC_DATE_TAGGING},       # strictly after date tagging
+    "segment_formatting":   {SessionPhase.NSC_FACET_MAPPING},      # strictly after facet mapping
+    "segment_editing":      {SessionPhase.NSC_COMPLETE,            # DSE only after verified NSC
+                             SessionPhase.DSE_CONFIRMING,
+                             SessionPhase.DSE_COMPLETE},
+    "clarification":        {SessionPhase.NSC_DECOMPOSING, SessionPhase.NSC_DATE_TAGGING,
+                             SessionPhase.NSC_FACET_MAPPING, SessionPhase.DSE_EDITING},
+}
+
+class SkillDispatcher:
+    def __init__(self, skill_router: SkillRouter, skill_registry: SkillRegistry):
+        self.router = skill_router
+        self.registry = skill_registry
+
+    async def dispatch(
+        self,
+        intent: str,
+        container: SessionContainer,
+        tenant_id: str,
+    ) -> tuple[Skill, list["StateRequirement"]]:
+        """
+        Returns the skill to run AND the state requirements that must hold.
+        Raises InvalidTransitionError if the FSM phase doesn't permit this skill.
+        """
+
+        # Step 1: Resolve skill from intent
+        skill_id = self.router.INTENT_TO_SKILL.get(intent, "segment_creation")
+        skill = await self.registry.load_skill(skill_id, tenant_id)
+
+        # Step 2: Check FSM allows this skill from the current phase
+        allowed_phases = SKILL_PHASE_PRECONDITIONS.get(skill_id, set())
+        if container.fsm.phase not in allowed_phases:
+            raise InvalidTransitionError(
+                f"Skill '{skill_id}' cannot start from FSM phase '{container.fsm.phase}'. "
+                f"Allowed phases: {allowed_phases}. "
+                f"This prevents running '{skill_id}' on corrupt or incomplete state."
+            )
+
+        # Step 3: Return skill + the state requirements for this skill
+        requirements = STATE_REQUIREMENTS_BY_SKILL.get(skill_id, [])
+        return skill, requirements
+
+
+# ── State requirements per skill (from Pattern 5 in 1.2) ─────────────────────
+# These are the pre-conditions that StateValidator checks before the LLM call.
+
+STATE_REQUIREMENTS_BY_SKILL: dict[str, list[StateRequirement]] = {
+
+    "segment_decompose": [
+        StateRequirement(
+            name="raw_query_present",
+            check=lambda s: bool(s.raw_user_query),
+            error_message="Decomposer requires raw_user_query — session initialisation failed."
+        ),
+        StateRequirement(
+            name="facet_catalog_loaded",
+            check=lambda s: s.facet_key_identifier is not None,
+            error_message="Decomposer requires facet_key_identifier — catalog not loaded."
+        ),
+    ],
+
+    "date_tagging": [
+        StateRequirement(
+            name="sub_segment_complete",
+            check=lambda s: s.nsc.sub_segment is not None,
+            error_message="DateTagger requires nsc.sub_segment — decomposer did not complete."
+        ),
+    ],
+
+    "facet_mapping": [
+        StateRequirement(
+            name="sub_segment_present",
+            check=lambda s: s.nsc.sub_segment is not None,
+            error_message="FacetMapper requires nsc.sub_segment."
+        ),
+        StateRequirement(
+            name="date_metadata_present",
+            check=lambda s: s.nsc.date_metadata is not None,
+            error_message="FacetMapper requires nsc.date_metadata — date tagger did not complete."
+        ),
+    ],
+
+    "segment_formatting": [
+        StateRequirement(
+            name="facet_map_complete",
+            check=lambda s: s.nsc.complete_query_representation is not None,
+            error_message="Formatter requires nsc.complete_query_representation — facet mapping did not complete."
+        ),
+    ],
+
+    "segment_editing": [
+        StateRequirement(
+            name="creation_verified",
+            check=lambda s: s.segment_creation_verified is True,
+            error_message="DSE cannot run — segment_creation_verified=False. "
+                          "A verified segment must exist before editing is allowed."
+        ),
+        StateRequirement(
+            name="segmentr_representation_present",
+            check=lambda s: s.nsc.segmentr_representation is not None,
+            error_message="DSE requires nsc.segmentr_representation — formatter did not complete."
+        ),
+    ],
+}
+```
+
+**Why this matters:** Intent classification alone cannot prevent the `SegmentCreatedFlag` bug. A user can say "edit my segment" (correct intent: `segment_editing`) but if the NSC pipeline never fully completed, the FSM is still in `FAILED` or `NSC_FORMATTING` — not in `NSC_COMPLETE`. The FSM phase check catches this *before* a single token is spent on the edit skill.
+
+---
+
+### 7.3 Checkpointing Brackets Every Skill Call
+
+The pipeline calls `checkpoints.save()` after every successful skill execution (Pattern 4 from 1.2). This means failures are recoverable at single-step granularity — not just at the pipeline level.
+
+```
+SKILL EXECUTION WITH CHECKPOINTING:
+
+  BEFORE SKILL CALL:
+    StateValidator.validate()   ← Gate: state pre-conditions met?
+    fsm.transition(target)      ← Gate: FSM phase valid for this skill?
+    _extract_skill_input()      ← Read from state → SkillInput (no raw state access for skill)
+
+  SKILL CALL:
+    skill.execute(skill_input)  ← LLM call; skill is stateless, pure input→output
+
+  AFTER SKILL CALL (only on success):
+    _write_skill_output_to_state()   ← Write SkillOutput back to state
+    checkpoints.save(step_name)      ← Persist state to PostgreSQL
+
+  ON FAILURE:
+    fsm.transition(FAILED)      ← Mark session as failed
+    DO NOT write to state       ← State preserved at last good checkpoint
+    DO NOT advance checkpoint   ← User can resume from last saved step
+    Raise PipelineResumeableError with resume_from=last_checkpoint_step
+```
+
+```python
+# The full NSC pipeline with skill dispatch, FSM, and checkpointing integrated
+
+async def run_nsc_pipeline(
+    container: SessionContainer,
+    dispatcher: SkillDispatcher,
+    checkpoints: CheckpointRepository,
+    tenant_id: str,
+) -> None:
+    """
+    The 4-step NSC pipeline showing how loose skills and definite state
+    work together in practice.
+    """
+
+    # ── Step 1: Decompose ─────────────────────────────────────────────────
+    skill, requirements = await dispatcher.dispatch("segment_decompose", container, tenant_id)
+    # dispatcher already verified: FSM phase ∈ SKILL_PHASE_PRECONDITIONS["segment_decompose"]
+    # execute_skill will: validate requirements → advance FSM → call skill → write back → checkpoint
+    decompose_output = await execute_skill(
+        skill, container, step_name="decompose",
+        state_requirements=requirements, checkpoints=checkpoints
+    )
+    # After: state.nsc.sub_segment is set, checkpoint "segment_decompose_complete" saved
+    # After: FSM phase = NSC_DECOMPOSING
+
+    if decompose_output.clarification_questions:
+        # Pause pipeline; return question to user; wait for next turn
+        container.fsm.transition(SessionPhase.CLARIFYING, "decomposer needs clarification")
+        return
+
+    # ── Steps 2a + 2b: Date tagging + Milvus shortlist (parallel) ────────
+    container.fsm.transition(SessionPhase.NSC_DATE_TAGGING, "decompose succeeded")
+
+    date_skill, date_reqs = await dispatcher.dispatch("date_tagging", container, tenant_id)
+    # Milvus shortlisting is a tool call, not a skill — runs concurrently
+    date_output, facet_shortlist = await asyncio.gather(
+        execute_skill(date_skill, container, "date_tag", date_reqs, checkpoints),
+        milvus_shortlist_tool(container.state.nsc.sub_segment, tenant_id),  # not a skill
+    )
+    # After: state.nsc.date_metadata is set, checkpoint "date_tagging_complete" saved
+
+    # ── Step 3: Facet mapping ─────────────────────────────────────────────
+    facet_skill, facet_reqs = await dispatcher.dispatch("facet_mapping", container, tenant_id)
+    # StateValidator will check: sub_segment ≠ None AND date_metadata ≠ None (enforced)
+    try:
+        facet_output = await execute_skill(
+            facet_skill, container, "facet_map", facet_reqs, checkpoints
+        )
+    except MilvusUnavailableError:
+        # Checkpoint at "date_tagging_complete" already saved — user resumes from there
+        container.fsm.transition(SessionPhase.FAILED, "milvus unavailable during facet map")
+        raise PipelineResumeableError(
+            resume_from="date_tagging_complete",
+            user_message="Segment lookup service is temporarily unavailable. "
+                         "Your progress has been saved — retry in 30 seconds."
+        )
+
+    # ── Step 4: Format ────────────────────────────────────────────────────
+    format_skill, format_reqs = await dispatcher.dispatch("segment_formatting", container, tenant_id)
+    await execute_skill(format_skill, container, "format", format_reqs, checkpoints)
+    # After: _write_skill_output_to_state sets segment_creation_verified = True
+    # After: FSM transitions to NSC_COMPLETE (inside execute_skill via SKILL_TO_FSM_PHASE map)
+    # After: checkpoint "segment_formatting_complete" saved
+
+    # FSM is now NSC_COMPLETE — segment_editing skill is now permitted
+    container.fsm.transition(SessionPhase.NSC_COMPLETE, "all nsc steps succeeded")
+    await checkpoints.save(container, step_name="nsc_pipeline_complete")
+```
+
+---
+
+### 7.4 The Assembled Context With State Injected
+
+The current `05_integration_stitched.md` Section 1.2 shows Layer 3 containing user preferences and similar segments from memory. When state management is integrated, Layer 3 also carries the **current FSM phase and prior step outputs** — so the active skill always knows exactly where in the pipeline it sits and what upstream steps produced.
+
+```
+[LAYER 3 — INJECTED CONTEXT — EXTENDED WITH STATE]
+─────────────────────────────────────────────────────
+## USER CONTEXT (from long-term memory — user_id: user_B)
+  high_value → $200+ (confidence: 0.91)
+  holiday_season → Nov 15–Jan 5 (confidence: 1.0)
+
+## SIMILAR PAST SEGMENTS (top 2 matches from episodic memory)
+  [Segment 1] query: "high-value baby gear Q4" → {purchase_value >= 200, ...}
+
+## SESSION STATE (from SessionContainer — current pipeline context)
+  FSM phase: NSC_DATE_TAGGING
+  Completed steps: [decompose ✓]
+  Sub-segments from decomposer:
+    Seg-1 (verbatim): "high-value baby product buyers from last holiday season"
+      → attribute groups: [value, category, date]
+      → boolean: AND
+  Ambiguity resolved this session: (none yet)
+
+## PRIOR STEP OUTPUTS (typed, validated — passed as SkillInput.prior_step_outputs)
+  decompose.sub_segment:
+    version: "v1"
+    query_representation: "high-value baby product buyers from last holiday season"
+    relationship_representation: "INCLUDE customers WHERE (value AND category AND date)"
+
+## TENANT CONFIG — RetailCo
+  Allowed facets: [purchase_value, product_category, ...]
+  Holiday season: Nov 15 – Jan 5
+─────────────────────────────────────────────────────
+```
+
+The **date tagger skill** receives this context and can immediately see:
+- The verbatim sub-segment to parse (`"...from last holiday season"`)
+- That the tenant defines holiday season as Nov 15–Jan 5 (no clarification needed)
+- That the decomposer already completed successfully (safe to consume its output)
+
+It does NOT see the raw `SessionContainer` or the FSM object. It receives a clean `SkillInput` built from that state. This is what keeps the skill loosely coupled while state remains strictly controlled.
+
+---
+
+### 7.5 What "Loosely Coupled Skill + Definite State" Means in Practice
+
+The design produces four concrete properties that the old flat-dict + hardcoded-pipeline approach could never achieve:
+
+**Property 1 — Swap a skill without touching state**
+
+```python
+# Old approach: changing facet mapping logic requires editing agent.py
+# and risks breaking state assumptions scattered across the file.
+
+# New approach: promote segment_creation_v3.2.2 to active in SkillRegistry.
+# The pipeline calls execute_skill() → extracts SkillInput from state → runs new skill
+# → _write_skill_output_to_state() writes back to the SAME state schema.
+# State schema is unchanged. FSM is unchanged. Checkpoints are unchanged.
+# Only the instructions inside the skill changed.
+await registry.promote_skill("segment_creation", version="3.2.2")
+# Done. No other file touched.
+```
+
+**Property 2 — State errors surface before LLM tokens are spent**
+
+```python
+# Old approach: agents assume state is correct. If NSC set a None value,
+# DSE discovers it 5 LLM calls later when it tries to use it.
+
+# New approach: StateValidator runs before execute_skill().
+# If state.nsc.segmentr_representation is None, DSE raises StatePreconditionError
+# before a single API call is made. Error is specific and actionable.
+StateValidator.validate(container.state, STATE_REQUIREMENTS_BY_SKILL["segment_editing"])
+# → raises: "DSE requires nsc.segmentr_representation — formatter did not complete."
+```
+
+**Property 3 — FSM phase is a second independent guard for the SegmentCreatedFlag bug**
+
+```python
+# Scenario: NSC formatter failed. segment_creation_verified was never set True.
+# User's next message: "edit my segment" → intent classifier correctly says "segment_editing"
+
+dispatcher.dispatch("segment_editing", container, tenant_id)
+# → checks SKILL_PHASE_PRECONDITIONS["segment_editing"]
+# → allowed phases: {NSC_COMPLETE, DSE_CONFIRMING, DSE_COMPLETE}
+# → container.fsm.phase = FAILED (formatter failed, FSM in FAILED state)
+# → FAILED ∉ allowed phases → raises InvalidTransitionError immediately
+# → Zero tokens spent. User gets: "Your previous segment could not be completed.
+#   Would you like to retry creating it?"
+
+# Even if somehow the FSM phase check was bypassed:
+StateValidator.validate(container.state, STATE_REQUIREMENTS_BY_SKILL["segment_editing"])
+# → checks: segment_creation_verified is True → False → raises StatePreconditionError
+# Two independent guards. Bug is impossible by construction.
+```
+
+**Property 4 — Resume from any step, not from scratch**
+
+```python
+# Scenario: Facet mapping failed (Milvus down). User retries 2 minutes later.
+
+container = session_registry.get(session_id)
+# container.fsm.phase = FAILED
+# checkpoints table has: "date_tagging_complete" as last saved step
+
+# On retry, the pipeline resumes from the last checkpoint:
+checkpoint = await checkpoints.load_latest(session_id)
+container = SessionContainer.from_checkpoint(checkpoint)
+# container.state.nsc.date_metadata is populated (date tagger already ran)
+# container.fsm.phase = NSC_DATE_TAGGING (restored from checkpoint)
+
+# Pipeline jumps straight to step 3:
+facet_skill, facet_reqs = await dispatcher.dispatch("facet_mapping", container, tenant_id)
+# StateValidator checks: sub_segment ≠ None ✓, date_metadata ≠ None ✓
+# FSM: NSC_DATE_TAGGING ∈ SKILL_PHASE_PRECONDITIONS["facet_mapping"] ✓
+# → Proceeds directly to facet mapping. Date tagger not re-run.
+```
+
+---
+
+### 7.6 Summary: The Architecture in One Diagram
+
+```
+USER QUERY
+    │
+    ▼
+INTENT CLASSIFIER (cheap model, no state access)
+    │  intent = "segment_editing"
+    ▼
+SKILL DISPATCHER
+    │  1. Resolves skill_id from intent
+    │  2. Checks FSM phase ∈ SKILL_PHASE_PRECONDITIONS[skill_id]
+    │     → If NO: InvalidTransitionError (zero tokens spent)
+    │  3. Returns (skill, state_requirements)
+    ▼
+EXECUTE_SKILL (pipeline layer — the only bridge between skill and state)
+    │
+    ├─► GATE 1: StateValidator.validate(state, requirements)
+    │     → Pattern 5 from 1.2 — pre-condition dependency graph
+    │     → If ANY requirement fails: StatePreconditionError (zero tokens spent)
+    │
+    ├─► GATE 2: fsm.transition(target_phase)
+    │     → Pattern 2 from 1.2 — FSM valid transition enforcement
+    │     → If invalid: InvalidTransitionError
+    │
+    ├─► READ: _extract_skill_input(container)
+    │     → Skill sees only SkillInput — never raw SessionContainer
+    │
+    ├─► SKILL CALL: skill.execute(skill_input)   ← LOOSE: swappable, versioned
+    │     → LLM call with assembled prompt (Layers 1+2+3+4)
+    │     → Returns SkillOutput (typed, validated by Pydantic)
+    │
+    ├─► WRITE: _write_skill_output_to_state(state, output)
+    │     → Pattern 1 from 1.2 — Pydantic state models enforce types at write time
+    │     → model_validator cross-checks (e.g., DSE blocked if creation_verified=False)
+    │
+    └─► CHECKPOINT: checkpoints.save(container, step_name)
+          → Pattern 4 from 1.2 — PostgreSQL step-level checkpoint
+          → Enables resume-from-checkpoint on any future failure
+
+OUTPUT TO USER
+    │
+    ▼
+MEMORY WRITE-BACK (async, after response returned)
+    + FEEDBACK COLLECTION (implicit signals)
+    + WEEKLY OPTIMIZATION CYCLE (if failure patterns accumulate)
+```
+
+Skills are the loose layer — dynamic, versioned, swappable, LLM-driven. State is the definite layer — typed, FSM-governed, checkpointed, auditable. The pipeline layer (`execute_skill`) is the only bridge, and its job is to enforce the state contracts so skills never have to.
+
+---
+
 *Document produced as part of Enterprise Agentic Research — Research 1 (Sonnet Claude)*
 *This document stitches together: 01_bottleneck_analysis.md, 03_concrete_upgrade_proposal.md, 04_implementation_roadmap.md*
-*Answers: (1) how skills integrate with static prompts, (2) how memory is used at request time, (3) how the self-improvement loop closes*
+*Answers: (1) how skills integrate with static prompts, (2) how memory is used at request time, (3) how the self-improvement loop closes, (4) how loose skills and definite state coexist*
